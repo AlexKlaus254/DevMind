@@ -232,7 +232,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw error;
       }
 
-      if (data.user && data.session) {
+      if (data.user) {
         const uid = data.user.id;
         const name =
           (data.user.user_metadata?.full_name as string) || args.name;
@@ -253,7 +253,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               name,
               role,
               org_id: org.id,
-            });
+            },
+            { onConflict: "id" }
+          );
           }
         } else if (role === "member" && args.orgCode?.trim()) {
           await supabase.from("profiles").upsert({
@@ -261,15 +263,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             name,
             role,
             org_id: args.orgCode.trim(),
-          });
+          },
+          { onConflict: "id" }
+        );
         } else {
           await supabase.from("profiles").upsert({
             id: uid,
             name,
             role: "solo",
-          });
+          },
+          { onConflict: "id" }
+        );
         }
-        navigate("/app", { replace: true });
+        if (data.session){
+          navigate("/app", { replace: true });
+        }
       }
     },
     [navigate],

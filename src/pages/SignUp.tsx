@@ -88,7 +88,7 @@ export default function SignUp() {
 
           <div className="bg-card border border-border rounded-lg p-8 space-y-6">
             <div className="text-sm rounded-md border border-success/30 bg-success/10 text-success px-4 py-3">
-              Check your email to confirm your account
+              Account created. Check your email to confirm then sign in, or sign in directly if confirmation is disabled.
             </div>
             <p className="text-sm text-muted-foreground">
               We sent a confirmation link to <strong>{email}</strong>. Click it
