@@ -1,6 +1,19 @@
 import { supabase } from "./supabase";
 
-export type SupabaseErrorLike = { message?: string; code?: string; details?: string } | null | undefined;
+export type SupabaseErrorLike = { message?: string; code?: string; details?: string; status?: number } | null | undefined;
+
+/**
+ * Returns true if the error indicates session expiry (401 or JWT expired).
+ * Callers should sign out and redirect to signin with sessionExpired: true.
+ */
+export function isSessionExpiredError(error: SupabaseErrorLike): boolean {
+  if (error == null) return false;
+  const status = (error as { status?: number }).status;
+  if (status === 401) return true;
+  const msg = (error.message ?? "").toLowerCase();
+  const code = (error.code ?? "").toLowerCase();
+  return msg.includes("jwt expired") || code.includes("jwt_expired");
+}
 
 /**
  * Returns a human-readable string for Supabase/client errors.

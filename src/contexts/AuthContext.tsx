@@ -47,7 +47,7 @@ type AuthContextValue = {
   refetchProfile: () => Promise<void>;
   signIn: (args: SignInArgs) => Promise<void>;
   signUp: (args: SignUpArgs) => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (options?: { sessionExpired?: boolean }) => Promise<void>;
 };
 
 const AuthContext = React.createContext<AuthContextValue | undefined>(
@@ -283,16 +283,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [navigate],
   );
 
-  const signOut = React.useCallback(async () => {
-    setAuthError(null);
-    sessionExpiredRef.current = false;
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      setAuthError(error.message);
-      throw error;
-    }
-    navigate("/signin", { replace: true, state: { sessionExpired: false } });
-  }, [navigate]);
+  const signOut = React.useCallback(
+    async (options?: { sessionExpired?: boolean }) => {
+      setAuthError(null);
+      sessionExpiredRef.current = false;
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          setAuthError(error.message);
+          throw error;
+        }
+      } finally {
+        navigate("/signin", {
+          replace: true,
+          state: { sessionExpired: options?.sessionExpired ?? false },
+        });
+      }
+    },
+    [navigate],
+  );
 
   const value = React.useMemo<AuthContextValue>(
     () => ({

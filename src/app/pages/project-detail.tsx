@@ -31,7 +31,6 @@ import {
 } from "../../hooks/useProjects";
 import { useJournal } from "../../hooks/useJournal";
 import { usePostMortem } from "../../hooks/usePostMortem";
-import { PostMortemModal } from "../components/PostMortemModal";
 import {
   getSilentDaysForProject,
   getLastEntryGap,
@@ -46,16 +45,6 @@ import { computeConsistencyScore } from "../../lib/consistencyScore";
 import type { JournalEntryRow } from "../../hooks/useJournal";
 import { useEmotionalArc } from "../../hooks/useEmotionalArc";
 import { useDailyTasks, type DailyTaskStatus } from "../../hooks/useDailyTasks";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -146,11 +135,17 @@ export function ProjectDetail() {
       setLoading(false);
       return;
     }
+    let mounted = true;
     setLoading(true);
     fetchProject(id).then((p) => {
-      setProject(p ?? null);
-      setLoading(false);
+      if (mounted) {
+        setProject(p ?? null);
+        setLoading(false);
+      }
     });
+    return () => {
+      mounted = false;
+    };
   }, [id, fetchProject]);
 
   React.useEffect(() => {
@@ -174,20 +169,29 @@ export function ProjectDetail() {
     setStatusToConfirm(status);
   };
 
-  const confirmStatusChange = async () => {
+  const onStatusConfirm = async () => {
     if (!id || !statusToConfirm) return;
     const target = statusToConfirm;
-    setPendingStatus(target);
-    const ok = await updateProjectStatus(id, target);
-    if (ok) {
-      const key = `devmind:pending-postmortem:${id}`;
-      localStorage.setItem(key, "true");
-      navigate(`/app/projects/${id}/post-mortem`, {
-        state: { targetStatus: target },
-      });
-    }
     setStatusToConfirm(null);
+    setPendingStatus(target);
+    try {
+      const ok = await updateProjectStatus(id, target);
+      if (ok && ["completed", "abandoned", "paused"].includes(target)) {
+        const key = `devmind:pending-postmortem:${id}`;
+        localStorage.setItem(key, "true");
+        navigate(`/app/projects/${id}/post-mortem`, {
+          state: { targetStatus: target },
+        });
+      }
+    } catch {
+      setPendingStatus(null);
+    }
   };
+
+  const onStatusCancel = React.useCallback(() => {
+    setStatusToConfirm(null);
+    setPendingStatus(null);
+  }, []);
 
   if (loading || !id) {
     return (
@@ -233,32 +237,64 @@ export function ProjectDetail() {
     else if (diff < 0) deadlineLabel = `${Math.abs(diff)} days overdue`;
     else deadlineLabel = "Due today";
   }
+  const statusModalOpen = statusToConfirm != null;
+
+  React.useEffect(() => {
+    if (!statusModalOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onStatusCancel();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [statusModalOpen, onStatusCancel]);
+
   return (
     <div className="min-h-screen pb-20 md:pb-8">
-      <AlertDialog
-        open={statusToConfirm != null}
-        onOpenChange={(open) => !open && setStatusToConfirm(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {statusToConfirm
-                ? `Mark this project as ${statusToConfirm}?`
-                : "Update status"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will trigger a post-mortem review. Status is only final
-              after the post-mortem is completed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmStatusChange}>
-              Continue
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {statusModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={onStatusCancel}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="status-modal-title"
+        >
+          <div
+            className="bg-card border border-border rounded-lg p-6 w-full max-w-sm mx-4 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="status-modal-title" className="text-lg font-semibold">
+              Update project status
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Mark this project as <strong>{statusToConfirm}</strong>?
+              {["completed", "abandoned", "paused"].includes(
+                statusToConfirm ?? "",
+              ) && " A post-mortem review will follow."}
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onStatusConfirm}
+                className="flex-1 bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium hover:opacity-90"
+              >
+                Confirm
+              </button>
+              <button
+                type="button"
+                onClick={onStatusCancel}
+                className="flex-1 border border-border rounded-md px-4 py-2 text-sm font-medium hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -283,18 +319,27 @@ export function ProjectDetail() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() => openStatusDialog("completed")}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openStatusDialog("completed");
+                  }}
                 >
                   Mark as completed
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => openStatusDialog("paused")}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openStatusDialog("paused");
+                  }}
                 >
                   Pause project
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   variant="destructive"
-                  onClick={() => openStatusDialog("abandoned")}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openStatusDialog("abandoned");
+                  }}
                 >
                   Abandon project
                 </DropdownMenuItem>

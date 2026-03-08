@@ -1,7 +1,7 @@
 import * as React from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
-import { parseSupabaseError } from "../lib/errorHandler";
+import { parseSupabaseError, isSessionExpiredError } from "../lib/errorHandler";
 import type { Database } from "../types/database";
 
 export type NotificationSettingsRow =
@@ -34,7 +34,7 @@ export type NotificationSettingsPayload = {
 };
 
 export function useNotificationSettings() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [settings, setSettings] = React.useState<NotificationSettingsRow | null>(
     null,
   );
@@ -49,45 +49,59 @@ export function useNotificationSettings() {
     }
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("notification_settings")
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (err) {
-      setError(parseSupabaseError(err));
-      setSettings(null);
-      setLoading(false);
-      return;
-    }
-    if (data) {
-      const row = data as NotificationSettingsRow;
-      if (row.silence_threshold_hours == null) {
-        const days =
-          row.silence_threshold_days ?? DEFAULT_SETTINGS.silence_threshold_days;
-        row.silence_threshold_hours =
-          days != null ? days * 24 : DEFAULT_SETTINGS.silence_threshold_hours;
-      }
-      setSettings(row);
-    } else {
-      const { data: inserted, error: insertErr } = await supabase
+    try {
+      const { data, error: err } = await supabase
         .from("notification_settings")
-        .insert({
-          user_id: user.id,
-          ...DEFAULT_SETTINGS,
-          silence_threshold_hours: DEFAULT_SETTINGS.silence_threshold_hours,
-        })
-        .select()
-        .single();
-      if (insertErr) {
-        setError(parseSupabaseError(insertErr));
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (err) {
+        if (isSessionExpiredError(err)) {
+          signOut({ sessionExpired: true });
+          return;
+        }
+        setError(parseSupabaseError(err));
         setSettings(null);
-      } else {
-        setSettings(inserted as NotificationSettingsRow);
+        setLoading(false);
+        return;
       }
+      if (data) {
+        const row = data as NotificationSettingsRow;
+        if (row.silence_threshold_hours == null) {
+          const days =
+            row.silence_threshold_days ?? DEFAULT_SETTINGS.silence_threshold_days;
+          row.silence_threshold_hours =
+            days != null ? days * 24 : DEFAULT_SETTINGS.silence_threshold_hours;
+        }
+        setSettings(row);
+      } else {
+        const { data: inserted, error: insertErr } = await supabase
+          .from("notification_settings")
+          .insert({
+            user_id: user.id,
+            ...DEFAULT_SETTINGS,
+            silence_threshold_hours: DEFAULT_SETTINGS.silence_threshold_hours,
+          })
+          .select()
+          .single();
+        if (insertErr) {
+          if (isSessionExpiredError(insertErr)) {
+            signOut({ sessionExpired: true });
+            return;
+          }
+          setError(parseSupabaseError(insertErr));
+          setSettings(null);
+        } else {
+          setSettings(inserted as NotificationSettingsRow);
+        }
+      }
+    } catch (e) {
+      setError(parseSupabaseError(e as Parameters<typeof parseSupabaseError>[0]));
+      setSettings(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [user?.id]);
+  }, [user?.id, signOut]);
 
   React.useEffect(() => {
     fetchSettings();

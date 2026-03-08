@@ -50,7 +50,8 @@ function ProjectListSkeleton() {
 
 export function ProjectList() {
   const [filter, setFilter] = useState<"all" | ProjectStatus>("all");
-  const { projects, loading, error, updateProjectStatus } = useProjects();
+  const { projects, loading, error, fetchProjects, updateProjectStatus } =
+    useProjects();
   const { entriesByProject } = useAllJournalEntries();
   const navigate = useNavigate();
 
@@ -170,8 +171,16 @@ export function ProjectList() {
         {loading && <ProjectListSkeleton />}
 
         {error && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/10 text-destructive px-4 py-3 text-sm mb-6">
-            Failed to load projects. Try refreshing.
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 text-destructive px-4 py-3 text-sm mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span>Failed to load projects.</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchProjects()}
+              className="shrink-0"
+            >
+              Retry
+            </Button>
           </div>
         )}
 

@@ -70,9 +70,10 @@ export function Settings() {
   const [browserMessage, setBrowserMessage] = React.useState<string | null>(
     null,
   );
+  const hasLoadedRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!dbSettings) return;
+    if (hasLoadedRef.current || !dbSettings) return;
     const channels = dbSettings.channel ?? defaultSettings.channel;
     const hours =
       dbSettings.silence_threshold_hours ??
@@ -101,7 +102,7 @@ export function Settings() {
       emailEnabled: channels.includes("email"),
       telegramEnabled: channels.includes("telegram"),
       notificationEmail:
-        dbSettings.notification_email ?? user?.email ?? "" ?? "",
+        dbSettings.notification_email ?? user?.email ?? "",
       telegramChatId: dbSettings.telegram_chat_id ?? "",
       reminderStyle:
         (dbSettings.reminder_style as ReminderStyle | null) ?? "smart",
@@ -123,70 +124,100 @@ export function Settings() {
       weeklyDigest:
         dbSettings.weekly_digest ?? defaultSettings.weekly_digest,
     });
+    hasLoadedRef.current = true;
   }, [dbSettings, defaultSettings, user?.email]);
 
   const debouncedLocal = useDebounce(local, 800);
-  const hasHydrated = React.useRef(false);
 
   React.useEffect(() => {
-    if (local) hasHydrated.current = true;
-  }, [local]);
-
-  React.useEffect(() => {
-    if (!debouncedLocal || !hasHydrated.current || loading || !user?.id) {
-      return;
-    }
-
+    if (!local || loading || !user?.id) return;
     const nextChannels: string[] = [];
-    if (debouncedLocal.browserEnabled) nextChannels.push("browser");
-    if (debouncedLocal.emailEnabled) nextChannels.push("email");
-    if (debouncedLocal.telegramEnabled) nextChannels.push("telegram");
-    if (nextChannels.length === 0) {
-      nextChannels.push("browser");
-    }
+    if (local.browserEnabled) nextChannels.push("browser");
+    if (local.emailEnabled) nextChannels.push("email");
+    if (local.telegramEnabled) nextChannels.push("telegram");
+    if (nextChannels.length === 0) nextChannels.push("browser");
 
     const hours =
-      debouncedLocal.silencePreset === "custom"
-        ? debouncedLocal.customSilenceUnit === "days"
-          ? debouncedLocal.customSilenceValue * 24
-          : debouncedLocal.customSilenceValue
-        : debouncedLocal.silencePreset;
+      local.silencePreset === "custom"
+        ? local.customSilenceUnit === "days"
+          ? local.customSilenceValue * 24
+          : local.customSilenceValue
+        : local.silencePreset;
 
     const payload = {
       channel: nextChannels,
-      reminder_style: debouncedLocal.reminderStyle,
+      reminder_style: local.reminderStyle,
       silence_threshold_hours: hours,
-      end_of_project_prompt: debouncedLocal.endOfProjectPrompt,
-      weekly_digest: debouncedLocal.weeklyDigest,
-      notification_email: debouncedLocal.emailEnabled
-        ? debouncedLocal.notificationEmail.trim() || null
+      end_of_project_prompt: local.endOfProjectPrompt,
+      weekly_digest: local.weeklyDigest,
+      notification_email: local.emailEnabled
+        ? local.notificationEmail.trim() || null
         : null,
-      telegram_chat_id: debouncedLocal.telegramEnabled
-        ? debouncedLocal.telegramChatId.trim() || null
+      telegram_chat_id: local.telegramEnabled
+        ? local.telegramChatId.trim() || null
         : null,
       scheduled_days:
-        debouncedLocal.reminderStyle === "scheduled"
-          ? debouncedLocal.scheduledDays
-          : null,
+        local.reminderStyle === "scheduled" ? local.scheduledDays : null,
       scheduled_time:
-        debouncedLocal.reminderStyle === "scheduled" &&
-        debouncedLocal.scheduledTime
-          ? `${debouncedLocal.scheduledTime}:00`
+        local.reminderStyle === "scheduled" && local.scheduledTime
+          ? `${local.scheduledTime}:00`
           : null,
       scheduled_timezone:
-        debouncedLocal.reminderStyle === "scheduled"
-          ? debouncedLocal.scheduledTimezone
-          : null,
+        local.reminderStyle === "scheduled" ? local.scheduledTimezone : null,
     };
 
     setSaveStatus("saving");
-    saveSettings(payload).then((ok) => {
-      setSaveStatus(ok ? "saved" : "failed");
-      if (ok) {
-        setTimeout(() => setSaveStatus("idle"), 1500);
-      }
-    });
+    saveSettings(payload)
+      .then((ok) => {
+        setSaveStatus(ok ? "saved" : "failed");
+        if (ok) setTimeout(() => setSaveStatus("idle"), 1500);
+      })
+      .catch(() => {
+        setSaveStatus("failed");
+      });
   }, [debouncedLocal, loading, saveSettings, user?.id]);
+
+  const saveOnBlur = React.useCallback(() => {
+    if (!local || !user?.id) return;
+    const nextChannels: string[] = [];
+    if (local.browserEnabled) nextChannels.push("browser");
+    if (local.emailEnabled) nextChannels.push("email");
+    if (local.telegramEnabled) nextChannels.push("telegram");
+    if (nextChannels.length === 0) nextChannels.push("browser");
+    const hours =
+      local.silencePreset === "custom"
+        ? local.customSilenceUnit === "days"
+          ? local.customSilenceValue * 24
+          : local.customSilenceValue
+        : local.silencePreset;
+    setSaveStatus("saving");
+    saveSettings({
+      channel: nextChannels,
+      reminder_style: local.reminderStyle,
+      silence_threshold_hours: hours,
+      end_of_project_prompt: local.endOfProjectPrompt,
+      weekly_digest: local.weeklyDigest,
+      notification_email: local.emailEnabled
+        ? local.notificationEmail.trim() || null
+        : null,
+      telegram_chat_id: local.telegramEnabled
+        ? local.telegramChatId.trim() || null
+        : null,
+      scheduled_days:
+        local.reminderStyle === "scheduled" ? local.scheduledDays : null,
+      scheduled_time:
+        local.reminderStyle === "scheduled" && local.scheduledTime
+          ? `${local.scheduledTime}:00`
+          : null,
+      scheduled_timezone:
+        local.reminderStyle === "scheduled" ? local.scheduledTimezone : null,
+    })
+      .then((ok) => {
+        setSaveStatus(ok ? "saved" : "failed");
+        if (ok) setTimeout(() => setSaveStatus("idle"), 1500);
+      })
+      .catch(() => setSaveStatus("failed"));
+  }, [local, user?.id, saveSettings]);
 
   if (!local || loading) {
     return (
@@ -292,6 +323,9 @@ export function Settings() {
                 Notification channels, reminder style, and triggers
               </p>
             </div>
+            {saveStatus === "saving" && (
+              <span className="text-sm text-muted-foreground">Saving...</span>
+            )}
             {saveStatus === "saved" && (
               <span className="text-sm text-success">Saved</span>
             )}
@@ -376,11 +410,13 @@ export function Settings() {
                     type="email"
                     value={local.notificationEmail}
                     onChange={(e) =>
-                      setLocal({
-                        ...local,
-                        notificationEmail: e.target.value,
-                      })
+                      setLocal((prev) =>
+                        prev
+                          ? { ...prev, notificationEmail: e.target.value }
+                          : prev,
+                      )
                     }
+                    onBlur={saveOnBlur}
                     className="bg-background"
                   />
                 </div>
@@ -418,11 +454,13 @@ export function Settings() {
                       id="telegram-chat-id"
                       value={local.telegramChatId}
                       onChange={(e) =>
-                        setLocal({
-                          ...local,
-                          telegramChatId: e.target.value,
-                        })
+                        setLocal((prev) =>
+                          prev
+                            ? { ...prev, telegramChatId: e.target.value }
+                            : prev,
+                        )
                       }
+                      onBlur={saveOnBlur}
                       className="bg-background"
                     />
                     <p className="text-xs text-muted-foreground">

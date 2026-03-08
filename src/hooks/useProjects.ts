@@ -1,7 +1,7 @@
 import * as React from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
-import { parseSupabaseError } from "../lib/errorHandler";
+import { parseSupabaseError, isSessionExpiredError } from "../lib/errorHandler";
 import type { Database } from "../types/database";
 
 const PROJECT_TYPES = ["personal", "work", "freelance", "opensource"];
@@ -24,7 +24,7 @@ export type CreateProjectData = {
 };
 
 export function useProjects() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [projects, setProjects] = React.useState<ProjectRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -32,19 +32,28 @@ export function useProjects() {
   const fetchProjects = React.useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("projects")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (err) {
-      setError(parseSupabaseError(err));
+    try {
+      const { data, error: err } = await supabase
+        .from("projects")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (err) {
+        if (isSessionExpiredError(err)) {
+          signOut({ sessionExpired: true });
+          return;
+        }
+        setError(parseSupabaseError(err));
+        setProjects([]);
+      } else {
+        setProjects((data ?? []) as ProjectRow[]);
+      }
+    } catch (e) {
+      setError(parseSupabaseError(e as Parameters<typeof parseSupabaseError>[0]));
       setProjects([]);
+    } finally {
       setLoading(false);
-      return;
     }
-    setProjects((data ?? []) as ProjectRow[]);
-    setLoading(false);
-  }, []);
+  }, [signOut]);
 
   React.useEffect(() => {
     if (!user) {
