@@ -30,6 +30,101 @@ export interface Database {
         };
         Relationships: [];
       };
+      org_settings: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          weekly_digest_enabled: boolean | null;
+          digest_day: string | null;
+          digest_time: string | null;
+          silence_alert_days: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          org_id?: string | null;
+          weekly_digest_enabled?: boolean | null;
+          digest_day?: string | null;
+          digest_time?: string | null;
+          silence_alert_days?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          org_id?: string | null;
+          weekly_digest_enabled?: boolean | null;
+          digest_day?: string | null;
+          digest_time?: string | null;
+          silence_alert_days?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "org_settings_org_id_fkey";
+            columns: ["org_id"];
+            referencedRelation: "organisations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      org_invites: {
+        Row: {
+          id: string;
+          org_id: string | null;
+          code: string;
+          created_by: string | null;
+          used_by: string | null;
+          used_at: string | null;
+          expires_at: string | null;
+          is_active: boolean | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          org_id?: string | null;
+          code: string;
+          created_by?: string | null;
+          used_by?: string | null;
+          used_at?: string | null;
+          expires_at?: string | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          org_id?: string | null;
+          code?: string;
+          created_by?: string | null;
+          used_by?: string | null;
+          used_at?: string | null;
+          expires_at?: string | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "org_invites_org_id_fkey";
+            columns: ["org_id"];
+            referencedRelation: "organisations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "org_invites_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "org_invites_used_by_fkey";
+            columns: ["used_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       profiles: {
         Row: {
           id: string;
@@ -40,6 +135,8 @@ export interface Database {
           org_id: string | null;
           onboarding_complete: boolean | null;
           created_at: string | null;
+          team_notes: string | null;
+          joined_org_at: string | null;
         };
         Insert: {
           id: string;
@@ -50,6 +147,8 @@ export interface Database {
           org_id?: string | null;
           onboarding_complete?: boolean | null;
           created_at?: string | null;
+          team_notes?: string | null;
+          joined_org_at?: string | null;
         };
         Update: {
           id?: string;
@@ -60,6 +159,8 @@ export interface Database {
           org_id?: string | null;
           onboarding_complete?: boolean | null;
           created_at?: string | null;
+          team_notes?: string | null;
+          joined_org_at?: string | null;
         };
         Relationships: [
           {

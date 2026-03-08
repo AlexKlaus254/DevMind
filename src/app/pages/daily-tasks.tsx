@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -51,6 +51,7 @@ function isAfterToday(dateStr: string) {
 
 export function DailyTasksPage() {
   const todayStr = new Date().toISOString().split("T")[0]!;
+  const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState<string>(todayStr);
   const { projects } = useProjects();
   const {
@@ -80,6 +81,12 @@ export function DailyTasksPage() {
     taskId: string | null;
     value: string;
   }>({ taskId: null, value: "" });
+
+  const [journalPrompt, setJournalPrompt] = useState<{
+    show: boolean;
+    projectId?: string;
+    projectName?: string;
+  }>({ show: false });
 
   const timeoutsRef = useRef<number[]>([]);
 
@@ -180,6 +187,33 @@ export function DailyTasksPage() {
       diffMinutes,
     );
     await updateTaskStatus(task.id, "completed", note);
+
+    if (task.project_id) {
+      const remainingTasks = tasks.filter((t) => {
+        const status = (t.status ?? "planned") as DailyTaskStatus;
+        return (
+          t.project_id === task.project_id &&
+          t.id !== task.id &&
+          t.planned_date === task.planned_date &&
+          !["completed", "skipped"].includes(status)
+        );
+      });
+
+      const key = `journal_prompted_${task.planned_date}_${task.project_id}`;
+      const alreadyPrompted =
+        typeof window !== "undefined" &&
+        window.localStorage.getItem(key) === "true";
+
+      if (remainingTasks.length === 0 && !alreadyPrompted) {
+        const projectName =
+          (task.project_id && projectNameById.get(task.project_id)) ?? "";
+        setJournalPrompt({
+          show: true,
+          projectId: task.project_id ?? undefined,
+          projectName,
+        });
+      }
+    }
   };
 
   const handleReschedule = async (task: DailyTaskRow) => {
@@ -239,6 +273,14 @@ export function DailyTasksPage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-6 space-y-8">
+        <button
+          type="button"
+          onClick={() => navigate("/app")}
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4"
+        >
+          ← Back to Dashboard
+        </button>
+
         {/* Top section — date navigation */}
         <section className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -384,6 +426,47 @@ export function DailyTasksPage() {
 
         {/* Task list */}
         <section className="space-y-4">
+          {journalPrompt.show && journalPrompt.projectId && (
+            <div className="border border-indigo-500/30 bg-indigo-500/5 rounded-lg p-4 space-y-3">
+              <p className="text-sm">
+                All tasks for{" "}
+                <strong>{journalPrompt.projectName ?? "this project"}</strong>
+                {" "}are done for today. Log a check-in on this project.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const key = `journal_prompted_${currentDate}_${journalPrompt.projectId}`;
+                    if (typeof window !== "undefined") {
+                      window.localStorage.setItem(key, "true");
+                    }
+                    navigate(
+                      `/app/projects/${journalPrompt.projectId}/checkin`,
+                    );
+                  }}
+                  className="px-3 py-1.5 rounded-md text-sm border border-border hover:bg-muted"
+                >
+                  Log check-in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (journalPrompt.projectId) {
+                      const key = `journal_prompted_${currentDate}_${journalPrompt.projectId}`;
+                      if (typeof window !== "undefined") {
+                        window.localStorage.setItem(key, "true");
+                      }
+                    }
+                    setJournalPrompt({ show: false });
+                  }}
+                  className="px-3 py-1.5 rounded-md text-sm border border-border hover:bg-muted"
+                >
+                  Not now
+                </button>
+              </div>
+            </div>
+          )}
           <h2 className="text-base font-semibold">
             Tasks for {formatDateLabel(currentDate)}
           </h2>

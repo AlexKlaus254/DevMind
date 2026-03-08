@@ -113,8 +113,8 @@ export function ProjectPostMortem() {
       setSuccess(true);
       await getPostMortem();
       setTimeout(() => {
-        navigate(`/app/projects/${projectId}`);
-      }, 1500);
+        navigate("/app/projects");
+      }, 1200);
     } catch (e) {
       setSaveError(parseSupabaseError(e as Parameters<typeof parseSupabaseError>[0]));
       setSubmitting(false);
@@ -128,11 +128,17 @@ export function ProjectPostMortem() {
       <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-6 py-6">
           <button
-            onClick={() => navigate("/app/projects")}
+            onClick={() => {
+              if (projectId) {
+                navigate(`/app/projects/${projectId}`);
+              } else {
+                navigate("/app/projects");
+              }
+            }}
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-4"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Projects</span>
+            <span>Back to project</span>
           </button>
           <h1 className="text-2xl font-semibold">Project Post-Mortem</h1>
           <p className="text-sm text-muted-foreground mt-1">

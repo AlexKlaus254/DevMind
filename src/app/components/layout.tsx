@@ -9,6 +9,7 @@ import {
   FileText,
   Settings as SettingsIcon,
   Users,
+  CheckSquare,
 } from "lucide-react";
 import { Avatar } from "./ui/avatar";
 import { useAuth } from "../../contexts/AuthContext";
@@ -17,6 +18,7 @@ const baseNavItems = [
   { path: "/app", icon: LayoutDashboard, label: "Dashboard" },
   { path: "/app/projects", icon: FolderKanban, label: "Projects" },
   { path: "/app/journal", icon: BookOpen, label: "Journal" },
+  { path: "/app/tasks", icon: CheckSquare, label: "Daily tasks" },
   { path: "/app/insights", icon: Brain, label: "Insights" },
   { path: "/app/digest", icon: FileText, label: "Digest" },
   { path: "/app/settings", icon: SettingsIcon, label: "Settings" },
