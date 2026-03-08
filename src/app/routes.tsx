@@ -141,11 +141,7 @@ export const router = createBrowserRouter([
           },
           {
             path: "team",
-            element: (
-              <RoleGuard requiredRole="manager">
-                <TeamView />
-              </RoleGuard>
-            ),
+            element: <TeamView />,
           },
         ],
       },

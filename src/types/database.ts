@@ -514,6 +514,10 @@ export interface Database {
           scheduled_days: string[] | null;
           scheduled_time: string | null;
           scheduled_timezone: string | null;
+          plan_reminder_enabled: boolean | null;
+          plan_reminder_time: string | null;
+          plan_reminder_style: string | null;
+          plan_reminder_custom_time: string | null;
         };
         Insert: {
           id?: string;
@@ -532,6 +536,10 @@ export interface Database {
           scheduled_days?: string[] | null;
           scheduled_time?: string | null;
           scheduled_timezone?: string | null;
+          plan_reminder_enabled?: boolean | null;
+          plan_reminder_time?: string | null;
+          plan_reminder_style?: string | null;
+          plan_reminder_custom_time?: string | null;
         };
         Update: {
           id?: string;
@@ -550,6 +558,10 @@ export interface Database {
           scheduled_days?: string[] | null;
           scheduled_time?: string | null;
           scheduled_timezone?: string | null;
+          plan_reminder_enabled?: boolean | null;
+          plan_reminder_time?: string | null;
+          plan_reminder_style?: string | null;
+          plan_reminder_custom_time?: string | null;
         };
         Relationships: [
           {
@@ -579,6 +591,8 @@ export interface Database {
           notify_before_minutes: number | null;
           created_at: string | null;
           updated_at: string | null;
+          recurring_task_id: string | null;
+          is_recurring: boolean | null;
         };
         Insert: {
           id?: string;
@@ -598,6 +612,8 @@ export interface Database {
           notify_before_minutes?: number | null;
           created_at?: string | null;
           updated_at?: string | null;
+          recurring_task_id?: string | null;
+          is_recurring?: boolean | null;
         };
         Update: {
           id?: string;
@@ -617,6 +633,8 @@ export interface Database {
           notify_before_minutes?: number | null;
           created_at?: string | null;
           updated_at?: string | null;
+          recurring_task_id?: string | null;
+          is_recurring?: boolean | null;
         };
         Relationships: [
           {
@@ -629,6 +647,248 @@ export interface Database {
             foreignKeyName: "daily_tasks_project_id_fkey";
             columns: ["project_id"];
             referencedRelation: "projects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "daily_tasks_recurring_task_id_fkey";
+            columns: ["recurring_task_id"];
+            referencedRelation: "recurring_tasks";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      recurring_tasks: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          project_id: string | null;
+          title: string;
+          description: string | null;
+          frequency: string;
+          custom_days: string[] | null;
+          planned_start_time: string | null;
+          planned_duration_minutes: number | null;
+          notify_at_start: boolean | null;
+          notify_before_minutes: number | null;
+          is_active: boolean | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          project_id?: string | null;
+          title: string;
+          description?: string | null;
+          frequency: string;
+          custom_days?: string[] | null;
+          planned_start_time?: string | null;
+          planned_duration_minutes?: number | null;
+          notify_at_start?: boolean | null;
+          notify_before_minutes?: number | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          project_id?: string | null;
+          title?: string;
+          description?: string | null;
+          frequency?: string;
+          custom_days?: string[] | null;
+          planned_start_time?: string | null;
+          planned_duration_minutes?: number | null;
+          notify_at_start?: boolean | null;
+          notify_before_minutes?: number | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "recurring_tasks_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "recurring_tasks_project_id_fkey";
+            columns: ["project_id"];
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      break_days: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          date: string;
+          break_type: string | null;
+          note: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          date: string;
+          break_type?: string | null;
+          note?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          date?: string;
+          break_type?: string | null;
+          note?: string | null;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "break_days_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      daily_plan_records: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          date: string;
+          planned_at: string | null;
+          task_count: number | null;
+          is_break_day: boolean | null;
+          plan_filled: boolean | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          date: string;
+          planned_at?: string | null;
+          task_count?: number | null;
+          is_break_day?: boolean | null;
+          plan_filled?: boolean | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          date?: string;
+          planned_at?: string | null;
+          task_count?: number | null;
+          is_break_day?: boolean | null;
+          plan_filled?: boolean | null;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "daily_plan_records_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      atomic_habits: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          name: string;
+          description: string | null;
+          frequency: string | null;
+          custom_days: string[] | null;
+          target_time: string | null;
+          cue: string | null;
+          reward: string | null;
+          category: string | null;
+          is_active: boolean | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          name: string;
+          description?: string | null;
+          frequency?: string | null;
+          custom_days?: string[] | null;
+          target_time?: string | null;
+          cue?: string | null;
+          reward?: string | null;
+          category?: string | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          name?: string;
+          description?: string | null;
+          frequency?: string | null;
+          custom_days?: string[] | null;
+          target_time?: string | null;
+          cue?: string | null;
+          reward?: string | null;
+          category?: string | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "atomic_habits_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      habit_logs: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          habit_id: string | null;
+          date: string;
+          completed: boolean | null;
+          skipped: boolean | null;
+          skip_reason: string | null;
+          notes: string | null;
+          logged_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          habit_id?: string | null;
+          date: string;
+          completed?: boolean | null;
+          skipped?: boolean | null;
+          skip_reason?: string | null;
+          notes?: string | null;
+          logged_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          habit_id?: string | null;
+          date?: string;
+          completed?: boolean | null;
+          skipped?: boolean | null;
+          skip_reason?: string | null;
+          notes?: string | null;
+          logged_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "habit_logs_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "habit_logs_habit_id_fkey";
+            columns: ["habit_id"];
+            referencedRelation: "atomic_habits";
             referencedColumns: ["id"];
           },
         ];
