@@ -27,6 +27,14 @@ import {
   getBlockerFrequency,
 } from "../../lib/blockerUtils";
 import { Skeleton } from "../components/ui/skeleton";
+import { useAuth } from "../../contexts/AuthContext";
+import {
+  getCompletionRate,
+  getAvoidancePatterns,
+  type DailyTaskRow,
+  type DailyTaskStatus,
+} from "../../hooks/useDailyTasks";
+import { supabase } from "../../lib/supabase";
 
 function InsightsSkeleton() {
   return (
@@ -79,6 +87,7 @@ function PatternCard({
 }
 
 export function InsightsDashboard() {
+  const { user } = useAuth();
   const {
     insights,
     projects,
@@ -98,6 +107,16 @@ export function InsightsDashboard() {
   const [dismissedPatternIds, setDismissedPatternIds] = React.useState<Set<string>>(
     () => new Set(),
   );
+  const [taskPatternsLoading, setTaskPatternsLoading] = React.useState(true);
+  const [taskPatternsError, setTaskPatternsError] = React.useState<string | null>(
+    null,
+  );
+  const [taskCompletionAllTime, setTaskCompletionAllTime] = React.useState(0);
+  const [taskAvoidance, setTaskAvoidance] = React.useState<
+    { label: string; skipped: number; total: number }[]
+  >([]);
+  const [bestDay, setBestDay] = React.useState<string | null>(null);
+  const [skipDay, setSkipDay] = React.useState<string | null>(null);
 
   const handleNoted = (id: string) => {
     setDismissedPatternIds((prev) => new Set(prev).add(id));
@@ -156,6 +175,102 @@ export function InsightsDashboard() {
         return "hsl(var(--muted))";
     }
   };
+
+  React.useEffect(() => {
+    if (!user?.id) {
+      setTaskPatternsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setTaskPatternsLoading(true);
+      setTaskPatternsError(null);
+      try {
+        const [completionAll, avoidance, dayStats] = await Promise.all([
+          getCompletionRate(user.id, 365),
+          getAvoidancePatterns(user.id),
+          (async () => {
+            const { data, error } = await supabase
+              .from("daily_tasks")
+              .select("planned_date, status")
+              .eq("user_id", user.id);
+            if (error || !data) {
+              return { best: null as string | null, skip: null as string | null };
+            }
+            type Row = Pick<DailyTaskRow, "planned_date" | "status">;
+            const rows = data as Row[];
+            const byDay = new Map<
+              number,
+              { completed: number; total: number; skips: number }
+            >();
+            const validStatuses: DailyTaskStatus[] = [
+              "planned",
+              "in_progress",
+              "completed",
+              "skipped",
+              "postponed",
+            ];
+            for (const t of rows) {
+              const s = (t.status ?? "planned") as DailyTaskStatus;
+              if (!validStatuses.includes(s)) continue;
+              const d = new Date(t.planned_date);
+              if (Number.isNaN(d.getTime())) continue;
+              const weekday = d.getDay(); // 0-6
+              const bucket =
+                byDay.get(weekday) ?? { completed: 0, total: 0, skips: 0 };
+              bucket.total += 1;
+              if (s === "completed") bucket.completed += 1;
+              if (s === "skipped" || s === "postponed") bucket.skips += 1;
+              byDay.set(weekday, bucket);
+            }
+            if (byDay.size === 0) {
+              return { best: null as string | null, skip: null as string | null };
+            }
+            const dayNames = [
+              "Sunday",
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday",
+              "Saturday",
+            ];
+            let bestDayName: string | null = null;
+            let bestRate = -1;
+            let skipDayName: string | null = null;
+            let skipCount = -1;
+            for (const [dayIndex, stats] of byDay.entries()) {
+              if (stats.total > 0) {
+                const rate = stats.completed / stats.total;
+                if (rate > bestRate) {
+                  bestRate = rate;
+                  bestDayName = dayNames[dayIndex];
+                }
+              }
+              if (stats.skips > skipCount) {
+                skipCount = stats.skips;
+                skipDayName = dayNames[dayIndex];
+              }
+            }
+            return { best: bestDayName, skip: skipDayName };
+          })(),
+        ]);
+        if (cancelled) return;
+        setTaskCompletionAllTime(completionAll);
+        setTaskAvoidance(avoidance);
+        setBestDay(dayStats.best);
+        setSkipDay(dayStats.skip);
+        setTaskPatternsLoading(false);
+      } catch {
+        if (cancelled) return;
+        setTaskPatternsError("Failed to load task patterns.");
+        setTaskPatternsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   if (loading) {
     return (
@@ -347,7 +462,75 @@ export function InsightsDashboard() {
           )}
         </div>
 
-        {/* Section 4 — Growth Tracker */}
+        {/* Section 4 — Task Patterns */}
+        <div>
+          <h2 className="text-lg font-semibold mb-4">Task Patterns</h2>
+          {taskPatternsLoading ? (
+            <div className="bg-card border border-border rounded-lg p-6">
+              <Skeleton className="h-16 rounded-md" />
+            </div>
+          ) : taskPatternsError ? (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 text-destructive px-4 py-3 text-sm">
+              {taskPatternsError}
+            </div>
+          ) : (
+            <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+              <div className="flex flex-wrap gap-6 text-sm">
+                <div>
+                  <div className="text-xs text-muted-foreground">
+                    Overall task completion rate
+                  </div>
+                  <div className="text-xl font-mono mt-1">
+                    {taskCompletionAllTime}%
+                  </div>
+                </div>
+                {bestDay && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      Day with highest completion rate
+                    </div>
+                    <div className="text-sm mt-1">{bestDay}</div>
+                  </div>
+                )}
+                {skipDay && (
+                  <div>
+                    <div className="text-xs text-muted-foreground">
+                      Day with most skips or postponements
+                    </div>
+                    <div className="text-sm mt-1">{skipDay}</div>
+                  </div>
+                )}
+              </div>
+              <p className="text-sm">
+                You complete {taskCompletionAllTime}% of tasks you plan.
+              </p>
+              <div>
+                <div className="text-xs text-muted-foreground mb-1">
+                  Most frequently postponed or skipped task types
+                </div>
+                {taskAvoidance.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No recurring postponement patterns yet.
+                  </p>
+                ) : (
+                  <ul className="flex flex-wrap gap-2 text-xs">
+                    {taskAvoidance.map((p) => (
+                      <li
+                        key={p.label}
+                        className="px-2 py-1 rounded-full border border-border bg-card"
+                        title={`Skipped ${p.skipped} times out of ${p.total}`}
+                      >
+                        {p.label}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Section 5 — Growth Tracker */}
         <div>
           <h2 className="text-lg font-semibold mb-4">Growth Tracker</h2>
           <div className="bg-card border border-border rounded-lg p-6 space-y-4">

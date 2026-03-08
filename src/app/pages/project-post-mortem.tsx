@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useLocation } from "react-router";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/label";
@@ -15,6 +15,7 @@ const satisfactionEmojis = ["😞", "😐", "🙂", "😊", "🤩"];
 export function ProjectPostMortem() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const location = useLocation();
   const { savePostMortem, postMortem, getPostMortem } = usePostMortem(id);
   const { updateProjectStatus, fetchProject } = useProjects();
   const [projectName, setProjectName] = useState("");
@@ -30,6 +31,10 @@ export function ProjectPostMortem() {
     whyEnded: "",
   });
 
+  const targetStatusFromState =
+    (location.state as { targetStatus?: ProjectStatus } | null)
+      ?.targetStatus ?? null;
+
   useEffect(() => {
     if (id) fetchProject(id).then((p) => setProjectName(p?.name ?? ""));
   }, [id, fetchProject]);
@@ -38,8 +43,18 @@ export function ProjectPostMortem() {
     if (postMortem) setShowAISummary(true);
   }, [postMortem]);
 
+  useEffect(() => {
+    if (targetStatusFromState) {
+      setFormData((prev) => ({
+        ...prev,
+        status: targetStatusFromState,
+      }));
+    }
+  }, [targetStatusFromState]);
+
   const handleSubmit = async () => {
-    if (!id || !formData.status || !formData.whyEnded.trim()) {
+    const finalStatus = formData.status || targetStatusFromState;
+    if (!id || !finalStatus || !formData.whyEnded.trim()) {
       setSaveError("Status and closing note are required.");
       return;
     }
@@ -63,10 +78,12 @@ export function ProjectPostMortem() {
       setSaving(false);
       return;
     }
-    const statusOk = await updateProjectStatus(id, formData.status);
+    const statusOk = await updateProjectStatus(id, finalStatus);
     if (!statusOk) {
       setSaveError("Failed to update project status.");
     }
+    const key = `devmind:pending-postmortem:${id}`;
+    localStorage.removeItem(key);
     setShowAISummary(true);
     setSaving(false);
     await getPostMortem();
@@ -104,6 +121,7 @@ export function ProjectPostMortem() {
             onValueChange={(value) =>
               setFormData({ ...formData, status: value as ProjectStatus | "" })
             }
+            disabled={!!targetStatusFromState}
           >
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {(["completed", "abandoned", "paused"] as const).map((status) => (

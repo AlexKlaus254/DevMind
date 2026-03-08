@@ -15,23 +15,28 @@ import {
 import { useProjects } from "../../hooks/useProjects";
 import { useAllJournalEntries } from "../../hooks/useJournal";
 import { useAiInsight } from "../../hooks/useAiInsight";
-import { getSilentDaysForProject, getLastEntryGap } from "../../lib/silenceUtils";
-
-const mockActivityData = [
-  { date: "Week 1", energy: 7, confidence: 8 },
-  { date: "Week 2", energy: 8, confidence: 7 },
-  { date: "Week 3", energy: 5, confidence: 5 },
-  { date: "Week 4", energy: 6, confidence: 6 },
-  { date: "Week 5", energy: 7, confidence: 8 },
-  { date: "Week 6", energy: 8, confidence: 9 },
-];
-
-const hasEnoughData = mockActivityData.length >= 3;
+import {
+  getSilentDaysForProject,
+  getLastEntryGap,
+} from "../../lib/silenceUtils";
+import { useEmotionalArc } from "../../hooks/useEmotionalArc";
+import { useDailyTasks } from "../../hooks/useDailyTasks";
 
 export function Dashboard() {
   const { projects, loading } = useProjects();
   const { entries, entriesByProject } = useAllJournalEntries();
   const { insight, loading: insightLoading, fetchLatest } = useAiInsight();
+  const {
+    arcData,
+    loading: arcLoading,
+  } = useEmotionalArc();
+  const {
+    tasks: todayTasks,
+    loading: tasksLoading,
+    error: tasksError,
+    fetchTasksForDate: fetchTasksForToday,
+    updateTaskStatus: updateTaskStatusInline,
+  } = useDailyTasks();
 
   const activeProjects = projects.filter((p) => p.status === "active");
   const activeCount = activeProjects.length;
@@ -57,6 +62,11 @@ export function Dashboard() {
     const d = new Date(e.created_at);
     return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
   }).length;
+
+  React.useEffect(() => {
+    const todayIso = new Date().toISOString().split("T")[0]!;
+    fetchTasksForToday(todayIso);
+  }, [fetchTasksForToday]);
 
   if (loading) {
     return (
@@ -160,14 +170,85 @@ export function Dashboard() {
           />
         </div>
 
+        {/* Today's tasks widget */}
+        <div className="bg-card border border-border rounded-lg p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-semibold">Today's tasks</h3>
+            <Link
+              to="/app/tasks"
+              className="text-xs text-primary hover:underline"
+            >
+              Open tasks page
+            </Link>
+          </div>
+          {tasksLoading ? (
+            <div className="space-y-2">
+              {[1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-10 rounded-md bg-muted/40 animate-pulse"
+                />
+              ))}
+            </div>
+          ) : tasksError ? (
+            <p className="text-xs text-destructive">
+              Failed to load tasks.
+            </p>
+          ) : todayTasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No tasks scheduled for today.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {todayTasks.slice(0, 5).map((t) => (
+                <div
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate">{t.title}</div>
+                    {t.planned_start_time && (
+                      <div className="text-muted-foreground">
+                        {t.planned_start_time.slice(0, 5)}
+                      </div>
+                    )}
+                  </div>
+                  {t.status !== "completed" && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() =>
+                        updateTaskStatusInline(t.id, "completed")
+                      }
+                    >
+                      Done
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Project Emotional Arc */}
         <div className="bg-card border border-border rounded-lg p-6">
-          <h3 className="text-lg font-semibold mb-6">Project Emotional Arc</h3>
-          {hasEnoughData ? (
+          <h3 className="text-lg font-semibold mb-6">
+            Project emotional arc
+          </h3>
+          {arcLoading ? (
+            <div className="h-64 rounded-lg bg-muted/50 animate-pulse" />
+          ) : arcData.length < 3 ? (
+            <p className="text-muted-foreground py-8 text-center">
+              Log at least 3 check-ins to see your emotional arc.
+            </p>
+          ) : (
             <>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={mockActivityData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#30363D" />
+                <LineChart data={arcData}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#30363D"
+                  />
                   <XAxis
                     dataKey="date"
                     stroke="#8B949E"
@@ -176,7 +257,7 @@ export function Dashboard() {
                   <YAxis
                     stroke="#8B949E"
                     style={{ fontSize: "12px" }}
-                    domain={[0, 10]}
+                    domain={[1, 10]}
                   />
                   <Tooltip
                     contentStyle={{
@@ -192,6 +273,7 @@ export function Dashboard() {
                     stroke="#6C63FF"
                     strokeWidth={2}
                     name="Energy"
+                    dot={false}
                   />
                   <Line
                     type="monotone"
@@ -199,27 +281,11 @@ export function Dashboard() {
                     stroke="#3FB950"
                     strokeWidth={2}
                     name="Confidence"
+                    dot={false}
                   />
                 </LineChart>
               </ResponsiveContainer>
-              <div className="flex items-center justify-center gap-6 mt-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-primary" />
-                  <span className="text-sm text-muted-foreground">Energy</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-success" />
-                  <span className="text-sm text-muted-foreground">
-                    Confidence
-                  </span>
-                </div>
-              </div>
             </>
-          ) : (
-            <p className="text-muted-foreground py-8 text-center">
-              Not enough entries to show pattern. Log more check-ins to reveal
-              your arc.
-            </p>
           )}
         </div>
 

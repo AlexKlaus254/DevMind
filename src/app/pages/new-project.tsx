@@ -20,6 +20,7 @@ import { useProjects } from "../../hooks/useProjects";
 export function NewProject() {
   const navigate = useNavigate();
   const { createProject } = useProjects();
+  const today = new Date().toISOString().split("T")[0];
   const [step, setStep] = useState(1);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -53,6 +54,15 @@ export function NewProject() {
     if (!formData.successDefinition.trim() || !formData.abandonmentRisk.trim()) {
       setSubmitError("Success definition and abandonment risk are required.");
       return;
+    }
+    if (formData.hasDeadline && formData.deadlineDate) {
+      const selected = new Date(formData.deadlineDate);
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      if (selected < now) {
+        setSubmitError("Deadline cannot be in the past.");
+        return;
+      }
     }
     if (!formData.understood) return;
     setSubmitError(null);
@@ -386,6 +396,7 @@ export function NewProject() {
                 <Input
                   id="deadlineDate"
                   type="date"
+                  min={today}
                   value={formData.deadlineDate}
                   onChange={(e) =>
                     setFormData({ ...formData, deadlineDate: e.target.value })

@@ -10,7 +10,7 @@ type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 export type UserRole = "solo" | "member" | "manager";
 
 type SignInArgs =
-  | { provider: "github"; redirectTo?: string }
+  | { provider: "github" | "google" | "azure"; redirectTo?: string }
   | { email: string; password: string };
 
 type SignUpArgs = {
@@ -185,7 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const redirectTo =
             args.redirectTo ?? `${window.location.origin}/app`;
           const { error } = await supabase.auth.signInWithOAuth({
-            provider: "github",
+            provider: args.provider,
             options: { redirectTo },
           });
           if (error) {

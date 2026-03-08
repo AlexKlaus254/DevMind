@@ -407,6 +407,12 @@ export interface Database {
           silence_threshold_days: number | null;
           end_of_project_prompt: boolean | null;
           weekly_digest: boolean | null;
+          telegram_chat_id: string | null;
+          notification_email: string | null;
+          silence_threshold_hours: number | null;
+          scheduled_days: string[] | null;
+          scheduled_time: string | null;
+          scheduled_timezone: string | null;
         };
         Insert: {
           id?: string;
@@ -419,6 +425,12 @@ export interface Database {
           silence_threshold_days?: number | null;
           end_of_project_prompt?: boolean | null;
           weekly_digest?: boolean | null;
+          telegram_chat_id?: string | null;
+          notification_email?: string | null;
+          silence_threshold_hours?: number | null;
+          scheduled_days?: string[] | null;
+          scheduled_time?: string | null;
+          scheduled_timezone?: string | null;
         };
         Update: {
           id?: string;
@@ -431,12 +443,91 @@ export interface Database {
           silence_threshold_days?: number | null;
           end_of_project_prompt?: boolean | null;
           weekly_digest?: boolean | null;
+          telegram_chat_id?: string | null;
+          notification_email?: string | null;
+          silence_threshold_hours?: number | null;
+          scheduled_days?: string[] | null;
+          scheduled_time?: string | null;
+          scheduled_timezone?: string | null;
         };
         Relationships: [
           {
             foreignKeyName: "notification_settings_user_id_fkey";
             columns: ["user_id"];
             referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      daily_tasks: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          project_id: string | null;
+          title: string;
+          description: string | null;
+          planned_date: string;
+          planned_start_time: string | null;
+          planned_duration_minutes: number | null;
+          actual_start_time: string | null;
+          actual_duration_minutes: number | null;
+          status: string | null;
+          completion_note: string | null;
+          skip_reason: string | null;
+          notify_at_start: boolean | null;
+          notify_before_minutes: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          project_id?: string | null;
+          title: string;
+          description?: string | null;
+          planned_date?: string;
+          planned_start_time?: string | null;
+          planned_duration_minutes?: number | null;
+          actual_start_time?: string | null;
+          actual_duration_minutes?: number | null;
+          status?: string | null;
+          completion_note?: string | null;
+          skip_reason?: string | null;
+          notify_at_start?: boolean | null;
+          notify_before_minutes?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          project_id?: string | null;
+          title?: string;
+          description?: string | null;
+          planned_date?: string;
+          planned_start_time?: string | null;
+          planned_duration_minutes?: number | null;
+          actual_start_time?: string | null;
+          actual_duration_minutes?: number | null;
+          status?: string | null;
+          completion_note?: string | null;
+          skip_reason?: string | null;
+          notify_at_start?: boolean | null;
+          notify_before_minutes?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "daily_tasks_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "daily_tasks_project_id_fkey";
+            columns: ["project_id"];
+            referencedRelation: "projects";
             referencedColumns: ["id"];
           },
         ];

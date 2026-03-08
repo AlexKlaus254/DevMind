@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useState } from "react";
-import { Link } from "react-router";
-import { Plus, Calendar, TrendingUp } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { Plus, Calendar, TrendingUp, MoreHorizontal } from "lucide-react";
 import { ProjectStatusBadge } from "../components/devmind/project-status-badge";
 import { Sparkline } from "../components/devmind/sparkline";
 import { Button } from "../components/ui/button";
@@ -12,6 +12,22 @@ import { getLastEntryGap } from "../../lib/silenceUtils";
 import { computeRiskScore } from "../../lib/riskScore";
 import { computeConsistencyScore } from "../../lib/consistencyScore";
 import type { ProjectRow, ProjectStatus } from "../../hooks/useProjects";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 
 function ProjectListSkeleton() {
   return (
@@ -34,8 +50,9 @@ function ProjectListSkeleton() {
 
 export function ProjectList() {
   const [filter, setFilter] = useState<"all" | ProjectStatus>("all");
-  const { projects, loading, error } = useProjects();
+  const { projects, loading, error, updateProjectStatus } = useProjects();
   const { entriesByProject } = useAllJournalEntries();
+  const navigate = useNavigate();
 
   const filters: { label: string; value: "all" | ProjectStatus }[] = [
     { label: "All", value: "all" },
@@ -60,8 +77,55 @@ export function ProjectList() {
     abandoned: projects.filter((p) => p.status === "abandoned").length,
   };
 
+  const [statusDialog, setStatusDialog] = useState<{
+    projectId: string;
+    status: ProjectStatus;
+  } | null>(null);
+
+  const openStatusDialog = (projectId: string, status: ProjectStatus) => {
+    setStatusDialog({ projectId, status });
+  };
+
+  const confirmStatusChange = async () => {
+    if (!statusDialog) return;
+    const { projectId, status } = statusDialog;
+    const ok = await updateProjectStatus(projectId, status);
+    if (ok) {
+      const key = `devmind:pending-postmortem:${projectId}`;
+      localStorage.setItem(key, "true");
+      navigate(`/app/projects/${projectId}/post-mortem`, {
+        state: { targetStatus: status },
+      });
+    }
+    setStatusDialog(null);
+  };
+
   return (
     <div className="min-h-screen pb-20 md:pb-8">
+      <AlertDialog
+        open={statusDialog != null}
+        onOpenChange={(open) => !open && setStatusDialog(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {statusDialog
+                ? `Mark this project as ${statusDialog.status}?`
+                : "Update status"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will trigger a post-mortem review. Status is only final
+              after the post-mortem is completed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmStatusChange}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
@@ -157,7 +221,56 @@ export function ProjectList() {
                             );
                           })()}
                         </div>
-                        <ProjectStatusBadge status={status} />
+                        <div className="flex items-start gap-2">
+                          <ProjectStatusBadge status={status} />
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="p-1 rounded-full border border-border hover:border-primary/60 hover:bg-card"
+                                onClick={(e) => e.preventDefault()}
+                              >
+                                <MoreHorizontal className="w-4 h-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  openStatusDialog(
+                                    project.id,
+                                    "completed",
+                                  );
+                                }}
+                              >
+                                Mark as completed
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  openStatusDialog(
+                                    project.id,
+                                    "paused",
+                                  );
+                                }}
+                              >
+                                Pause project
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  openStatusDialog(
+                                    project.id,
+                                    "abandoned",
+                                  );
+                                }}
+                              >
+                                Abandon project
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
 
                       <div className="space-y-4">

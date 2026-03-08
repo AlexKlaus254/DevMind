@@ -24,7 +24,11 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { useProjects, type ProjectRow, type ProjectStatus } from "../../hooks/useProjects";
+import {
+  useProjects,
+  type ProjectRow,
+  type ProjectStatus,
+} from "../../hooks/useProjects";
 import { useJournal } from "../../hooks/useJournal";
 import { usePostMortem } from "../../hooks/usePostMortem";
 import { PostMortemModal } from "../components/PostMortemModal";
@@ -40,6 +44,25 @@ import {
 } from "../../lib/blockerUtils";
 import { computeConsistencyScore } from "../../lib/consistencyScore";
 import type { JournalEntryRow } from "../../hooks/useJournal";
+import { useEmotionalArc } from "../../hooks/useEmotionalArc";
+import { useDailyTasks, type DailyTaskStatus } from "../../hooks/useDailyTasks";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
+import { MoreHorizontal } from "lucide-react";
 
 function SilenceHeatmap({
   entries,
@@ -106,11 +129,17 @@ export function ProjectDetail() {
   const { postMortem, loading: pmLoading, getPostMortem } = usePostMortem(id);
   const [project, setProject] = React.useState<ProjectRow | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [postMortemModal, setPostMortemModal] = React.useState<{
-    open: boolean;
-    status: ProjectStatus;
-  }>({ open: false, status: "completed" });
   const [pendingStatus, setPendingStatus] = React.useState<ProjectStatus | null>(null);
+  const [statusToConfirm, setStatusToConfirm] = React.useState<ProjectStatus | null>(null);
+  const [pendingPostMortem, setPendingPostMortem] = React.useState(false);
+
+  const { arcData: projectArc, loading: arcLoading } = useEmotionalArc(id);
+  const {
+    tasks: projectTasks,
+    loading: tasksLoading,
+    error: tasksError,
+    fetchTasksForProject,
+  } = useDailyTasks();
 
   React.useEffect(() => {
     if (!id) {
@@ -124,28 +153,40 @@ export function ProjectDetail() {
     });
   }, [id, fetchProject]);
 
-  const handleStatusChange = (newStatus: ProjectStatus) => {
-    if (newStatus === "active") {
-      setPendingStatus(null);
-      updateProjectStatus(id!, newStatus).then(() => {
-        getPostMortem();
-        setProject((prev) => (prev ? { ...prev, status: newStatus } : null));
-      });
+  React.useEffect(() => {
+    if (!id) return;
+    fetchTasksForProject(id);
+  }, [id, fetchTasksForProject]);
+
+  React.useEffect(() => {
+    if (!id) return;
+    const key = `devmind:pending-postmortem:${id}`;
+    if (postMortem) {
+      localStorage.removeItem(key);
+      setPendingPostMortem(false);
       return;
     }
-    setPendingStatus(newStatus);
-    setPostMortemModal({ open: true, status: newStatus });
+    const flag = localStorage.getItem(key);
+    setPendingPostMortem(flag === "true");
+  }, [id, postMortem]);
+
+  const openStatusDialog = (status: ProjectStatus) => {
+    setStatusToConfirm(status);
   };
 
-  const handlePostMortemSaved = () => {
-    setPendingStatus(null);
-    getPostMortem();
-    fetchProject(id!).then(setProject);
-  };
-
-  const handlePostMortemClose = () => {
-    setPostMortemModal((m) => ({ ...m, open: false }));
-    setPendingStatus(null);
+  const confirmStatusChange = async () => {
+    if (!id || !statusToConfirm) return;
+    const target = statusToConfirm;
+    setPendingStatus(target);
+    const ok = await updateProjectStatus(id, target);
+    if (ok) {
+      const key = `devmind:pending-postmortem:${id}`;
+      localStorage.setItem(key, "true");
+      navigate(`/app/projects/${id}/post-mortem`, {
+        state: { targetStatus: target },
+      });
+    }
+    setStatusToConfirm(null);
   };
 
   if (loading || !id) {
@@ -192,30 +233,32 @@ export function ProjectDetail() {
     else if (diff < 0) deadlineLabel = `${Math.abs(diff)} days overdue`;
     else deadlineLabel = "Due today";
   }
-  const chartData = entries
-    .slice()
-    .reverse()
-    .map((e, i) => ({
-      index: i + 1,
-      energy: e.energy_score ?? 0,
-      confidence: e.confidence_score ?? 0,
-      date: e.created_at
-        ? new Date(e.created_at).toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-          })
-        : "",
-    }));
-
   return (
     <div className="min-h-screen pb-20 md:pb-8">
-      <PostMortemModal
-        open={postMortemModal.open}
-        onClose={handlePostMortemClose}
-        projectId={id}
-        newStatus={postMortemModal.status}
-        onSaved={handlePostMortemSaved}
-      />
+      <AlertDialog
+        open={statusToConfirm != null}
+        onOpenChange={(open) => !open && setStatusToConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {statusToConfirm
+                ? `Mark this project as ${statusToConfirm}?`
+                : "Update status"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will trigger a post-mortem review. Status is only final
+              after the post-mortem is completed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmStatusChange}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -227,20 +270,36 @@ export function ProjectDetail() {
               </Button>
               <h1 className="text-xl font-semibold truncate">{project.name}</h1>
             </div>
-            <Select
-              value={pendingStatus ?? project.status ?? "active"}
-              onValueChange={(v) => handleStatusChange(v as ProjectStatus)}
-            >
-              <SelectTrigger className="w-[140px] capitalize">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="completed">Completed</SelectItem>
-                <SelectItem value="paused">Paused</SelectItem>
-                <SelectItem value="abandoned">Abandoned</SelectItem>
-              </SelectContent>
-            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2"
+                >
+                  Update status
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => openStatusDialog("completed")}
+                >
+                  Mark as completed
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => openStatusDialog("paused")}
+                >
+                  Pause project
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => openStatusDialog("abandoned")}
+                >
+                  Abandon project
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <p className="text-sm text-muted-foreground ml-11">
             {project.type ?? "Project"} · {daysActive} days active
@@ -250,6 +309,12 @@ export function ProjectDetail() {
               </span>
             )}
           </p>
+          {pendingPostMortem && (
+            <div className="mt-3 ml-11 text-xs text-amber-400">
+              This project has a pending post-mortem. Complete it to finalise
+              the status change.
+            </div>
+          )}
         </div>
       </div>
 
@@ -324,13 +389,16 @@ export function ProjectDetail() {
                 </div>
               );
             })()}
-            {chartData.length >= 2 && (
+            {projectArc.length >= 3 && (
               <div className="bg-card border border-border rounded-lg p-6">
                 <h3 className="text-base font-semibold mb-4">
-                  Energy & confidence
+                  Energy and confidence
                 </h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData}>
+                {arcLoading ? (
+                  <div className="h-52 rounded-lg bg-muted/50 animate-pulse" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={projectArc}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       dataKey="date"
@@ -338,7 +406,7 @@ export function ProjectDetail() {
                       className="text-muted-foreground"
                     />
                     <YAxis
-                      domain={[0, 10]}
+                      domain={[1, 10]}
                       tick={{ fontSize: 11 }}
                       className="text-muted-foreground"
                     />
@@ -366,7 +434,8 @@ export function ProjectDetail() {
                       dot={false}
                     />
                   </LineChart>
-                </ResponsiveContainer>
+                  </ResponsiveContainer>
+                )}
               </div>
             )}
             <div className="bg-card border border-border rounded-lg p-6">
@@ -382,6 +451,68 @@ export function ProjectDetail() {
           </TabsContent>
 
           <TabsContent value="journal" className="space-y-4">
+            <div className="bg-card border border-border rounded-lg p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">
+                  Tasks linked to this project
+                </h3>
+                {(() => {
+                  const counts = { total: 0, completed: 0 };
+                  for (const t of projectTasks) {
+                    const s = (t.status ?? "planned") as DailyTaskStatus;
+                    if (
+                      ["planned", "in_progress", "completed", "skipped", "postponed"].includes(
+                        s,
+                      )
+                    ) {
+                      counts.total += 1;
+                      if (s === "completed") counts.completed += 1;
+                    }
+                  }
+                  const rate =
+                    counts.total === 0
+                      ? 0
+                      : Math.round((counts.completed / counts.total) * 100);
+                  return (
+                    <span className="text-xs text-muted-foreground">
+                      Completion rate: {rate}%
+                    </span>
+                  );
+                })()}
+              </div>
+              {tasksLoading ? (
+                <div className="space-y-2">
+                  {[1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="h-8 rounded-md bg-muted/40 animate-pulse"
+                    />
+                  ))}
+                </div>
+              ) : tasksError ? (
+                <p className="text-xs text-destructive">
+                  Failed to load tasks.
+                </p>
+              ) : projectTasks.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No tasks linked to this project.
+                </p>
+              ) : (
+                <ul className="space-y-1 text-xs">
+                  {projectTasks.slice(0, 6).map((t) => (
+                    <li
+                      key={t.id}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="truncate">{t.title}</span>
+                      <span className="text-muted-foreground capitalize">
+                        {t.status ?? "planned"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <div className="flex justify-end">
               <Button size="sm" asChild>
                 <Link to={`/app/projects/${id}/checkin`}>

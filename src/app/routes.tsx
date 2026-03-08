@@ -11,6 +11,7 @@ import SignUp from "../pages/SignUp";
 import { Layout } from "./components/layout";
 import { Dashboard } from "./pages/dashboard";
 import { Journal } from "./pages/journal";
+import { DailyTasksPage } from "./pages/daily-tasks";
 import { ProjectList } from "./pages/project-list";
 import { NewProject } from "./pages/new-project";
 import { JournalCheckin } from "./pages/journal-checkin";
@@ -117,6 +118,10 @@ export const router = createBrowserRouter([
           {
             path: "journal",
             element: <Journal />,
+          },
+          {
+            path: "tasks",
+            element: <DailyTasksPage />,
           },
           {
             path: "insights",
