@@ -29,6 +29,7 @@ import {
   type ProjectRow,
   type ProjectStatus,
 } from "../../hooks/useProjects";
+import { useNotificationSettings } from "../../hooks/useNotificationSettings";
 import { useJournal } from "../../hooks/useJournal";
 import { usePostMortem } from "../../hooks/usePostMortem";
 import {
@@ -107,6 +108,7 @@ export function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { projects, fetchProject, updateProjectStatus } = useProjects();
+  const { settings: notificationSettings } = useNotificationSettings();
   const { entries, loading: entriesLoading } = useJournal(id);
   const userHistory = React.useMemo(
     () => ({
@@ -176,7 +178,13 @@ export function ProjectDetail() {
     setPendingStatus(target);
     try {
       const ok = await updateProjectStatus(id, target);
-      if (ok && ["completed", "abandoned", "paused"].includes(target)) {
+      const shouldPromptPostMortem =
+        notificationSettings?.end_of_project_prompt !== false;
+      if (
+        ok &&
+        shouldPromptPostMortem &&
+        ["completed", "abandoned", "paused"].includes(target)
+      ) {
         const key = `devmind:pending-postmortem:${id}`;
         localStorage.setItem(key, "true");
         navigate(`/app/projects/${id}/post-mortem`, {

@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { parseSupabaseError } from "../lib/errorHandler";
 import type { Database } from "../types/database";
 import { getCommonBlockerWords } from "../lib/blockerUtils";
-import { getISOWeek, getISOWeekYear } from "date-fns";
+import { startOfISOWeek } from "date-fns";
 
 type OrganisationRow = Database["public"]["Tables"]["organisations"]["Row"];
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
@@ -23,7 +23,7 @@ export type OrgDetails = {
 
 export type TeamMember = Pick<
   ProfileRow,
-  "id" | "name" | "role" | "joined_org_at"
+  "id" | "name" | "role" | "joined_org_at" | "created_at"
 >;
 
 export type TeamInvite = OrgInviteRow;
@@ -92,24 +92,44 @@ export function useTeam() {
       return;
     }
     try {
-      const [{ data: orgRaw, error: orgErr }, { data: membersRaw, error: mErr }] =
-        await Promise.all([
-          supabase
-            .from("organisations")
-            .select("*")
-            .eq("id", orgId)
-            .maybeSingle(),
-          supabase
-            .from("profiles")
-            .select("id")
-            .eq("org_id", orgId),
-        ]);
+      let org: OrganisationRow | null = null;
+      let memberCount: number | null = null;
 
-      if (orgErr) throw orgErr;
-      if (mErr) throw mErr;
+      // Attempt a single-query count (works only if relationships are available).
+      const { data: orgRaw, error: orgErr } = await supabase
+        .from("organisations")
+        .select("id,name,created_at,profiles(count)")
+        .eq("id", orgId)
+        .maybeSingle();
 
-      const org = orgRaw as OrganisationRow | null;
-      const count = (membersRaw ?? []).length;
+      if (!orgErr && orgRaw) {
+        const withCount = orgRaw as OrganisationRow & {
+          profiles?: { count: number }[];
+        };
+        org = withCount;
+        memberCount = withCount.profiles?.[0]?.count ?? null;
+      }
+
+      // Fallback to two queries (always works).
+      if (!org) {
+        const [{ data: orgFallback, error: orgFallbackErr }, { data: membersRaw, error: mErr }] =
+          await Promise.all([
+            supabase.from("organisations").select("id,name,created_at").eq("id", orgId).maybeSingle(),
+            supabase.from("profiles").select("id").eq("org_id", orgId),
+          ]);
+        if (orgFallbackErr) throw orgFallbackErr;
+        if (mErr) throw mErr;
+        org = orgFallback as OrganisationRow | null;
+        memberCount = (membersRaw ?? []).length;
+      } else if (memberCount == null) {
+        const { data: membersRaw, error: mErr } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("org_id", orgId);
+        if (mErr) throw mErr;
+        memberCount = (membersRaw ?? []).length;
+      }
+
       if (!org) {
         setOrgDetails(null);
         return;
@@ -117,7 +137,7 @@ export function useTeam() {
       setOrgDetails({
         name: org.name,
         created_at: org.created_at,
-        memberCount: count,
+        memberCount: memberCount ?? 0,
       });
     } catch (e) {
       setError(parseSupabaseError(e as any));
@@ -132,9 +152,9 @@ export function useTeam() {
     try {
       const { data, error: err } = await supabase
         .from("profiles")
-        .select("id,name,role,joined_org_at")
+        .select("id,name,role,joined_org_at,created_at")
         .eq("org_id", orgId)
-        .order("joined_org_at", { ascending: false });
+        .order("joined_org_at", { ascending: false, nullsFirst: false });
       if (err) throw err;
       const rows = (data ?? []) as ProfileRow[];
       setMembers(
@@ -143,6 +163,7 @@ export function useTeam() {
           name: m.name,
           role: m.role,
           joined_org_at: m.joined_org_at,
+          created_at: m.created_at,
         })),
       );
     } catch (e) {
@@ -157,21 +178,17 @@ export function useTeam() {
       return;
     }
     try {
+      const nowIso = new Date().toISOString();
       const { data, error: err } = await supabase
         .from("org_invites")
-        .select("*")
+        .select("id,code,created_at,expires_at,is_active,used_by,used_at,org_id,created_by")
         .eq("org_id", orgId)
+        .eq("is_active", true)
+        .gt("expires_at", nowIso)
         .order("created_at", { ascending: false });
       if (err) throw err;
-      const now = new Date();
       const rows = (data ?? []) as OrgInviteRow[];
-      const filtered = rows.filter((inv) => {
-        if (!inv.is_active) return false;
-        if (!inv.expires_at) return true;
-        const exp = new Date(inv.expires_at);
-        return exp.getTime() > now.getTime();
-      });
-      setInvites(filtered);
+      setInvites(rows);
     } catch (e) {
       setError(parseSupabaseError(e as any));
       setInvites([]);
@@ -412,22 +429,28 @@ export function useTeam() {
           return;
         }
 
-        const [projectsRes, entriesRes, tasksRes] = await Promise.all([
+        const [projectsRes, entriesRes, blockedRes, tasksRes] = await Promise.all([
           supabase
             .from("projects")
-            .select("*")
+            .select("id,status")
             .in("user_id", memberIds),
           supabase
             .from("journal_entries")
-            .select("*")
+            .select("user_id,created_at,energy_score,confidence_score")
             .in("user_id", memberIds),
+          supabase
+            .from("journal_entries")
+            .select("was_blocked,blocker_note")
+            .in("user_id", memberIds)
+            .eq("was_blocked", true)
+            .not("blocker_note", "is", null),
           (() => {
             const cutoff = new Date();
             cutoff.setDate(cutoff.getDate() - 7);
             const cutoffIso = cutoff.toISOString().slice(0, 10);
             return supabase
               .from("daily_tasks")
-              .select("*")
+              .select("status,planned_date,user_id")
               .in("user_id", memberIds)
               .gte("planned_date", cutoffIso);
           })(),
@@ -435,10 +458,18 @@ export function useTeam() {
 
         if (projectsRes.error) throw projectsRes.error;
         if (entriesRes.error) throw entriesRes.error;
+        if (blockedRes.error) throw blockedRes.error;
         if (tasksRes.error) throw tasksRes.error;
 
         const projects = (projectsRes.data ?? []) as ProjectRow[];
-        const entries = (entriesRes.data ?? []) as JournalEntryRow[];
+        const entries = (entriesRes.data ?? []) as Pick<
+          JournalEntryRow,
+          "user_id" | "created_at" | "energy_score" | "confidence_score"
+        >[];
+        const blocked = (blockedRes.data ?? []) as Pick<
+          JournalEntryRow,
+          "was_blocked" | "blocker_note"
+        >[];
         const tasks = (tasksRes.data ?? []) as DailyTaskRow[];
 
         // Project stats
@@ -502,23 +533,22 @@ export function useTeam() {
             : 7;
         const thresholdMs = (thresholdDays ?? 7) * 24 * 60 * 60 * 1000;
         const nowMs = Date.now();
-        const entriesByUser = new Map<string, string[]>();
+        const lastEntryByUser = new Map<string, number>();
         for (const e of entries) {
           if (!e.user_id || !e.created_at) continue;
-          const list = entriesByUser.get(e.user_id) ?? [];
-          list.push(e.created_at);
-          entriesByUser.set(e.user_id, list);
+          const ts = new Date(e.created_at).getTime();
+          const prev = lastEntryByUser.get(e.user_id);
+          if (prev == null || ts > prev) {
+            lastEntryByUser.set(e.user_id, ts);
+          }
         }
         let silentMembers = 0;
         for (const id of memberIds) {
-          const list = entriesByUser.get(id) ?? [];
-          if (list.length === 0) {
+          const last = lastEntryByUser.get(id);
+          if (last == null) {
             silentMembers += 1;
             continue;
           }
-          const last = list
-            .map((d) => new Date(d).getTime())
-            .sort((a, b) => b - a)[0];
           if (nowMs - last > thresholdMs) {
             silentMembers += 1;
           }
@@ -539,37 +569,29 @@ export function useTeam() {
         eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 7 * 8);
         const buckets = new Map<
           string,
-          { sumEnergy: number; sumConfidence: number; count: number; earliest: Date }
+          { sumEnergy: number; sumConfidence: number; count: number }
         >();
 
         for (const e of entries) {
           if (!e.created_at) continue;
           const d = new Date(e.created_at);
           if (d.getTime() < eightWeeksAgo.getTime()) continue;
-          const key = `${getISOWeekYear(d)}-W${getISOWeek(d)
-            .toString()
-            .padStart(2, "0")}`;
+          const weekStart = startOfISOWeek(d);
+          const key = weekStart.toISOString().slice(0, 10);
           const existing =
-            buckets.get(key) ??
-            {
-              sumEnergy: 0,
-              sumConfidence: 0,
-              count: 0,
-              earliest: d,
-            };
+            buckets.get(key) ?? { sumEnergy: 0, sumConfidence: 0, count: 0 };
           existing.sumEnergy += e.energy_score ?? 0;
           existing.sumConfidence += e.confidence_score ?? 0;
           existing.count += 1;
-          if (d < existing.earliest) existing.earliest = d;
           buckets.set(key, existing);
         }
 
         const weeklyTrend: WeeklyTrendPoint[] = Array.from(
           buckets.entries(),
         )
-          .sort((a, b) => a[1].earliest.getTime() - b[1].earliest.getTime())
-          .map(([_, bucket]) => ({
-            week_start: bucket.earliest.toISOString().slice(0, 10),
+          .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+          .map(([weekStart, bucket]) => ({
+            week_start: weekStart,
             avg_energy:
               bucket.count === 0
                 ? 0
@@ -586,12 +608,7 @@ export function useTeam() {
           }));
 
         // Common blockers (top 5 words, anonymised)
-        const commonBlockers = getCommonBlockerWords(
-          entries.map((e) => ({
-            was_blocked: e.was_blocked,
-            blocker_note: e.blocker_note,
-          })),
-        );
+        const commonBlockers = getCommonBlockerWords(blocked);
 
         setAggregates({
           projectStats: {

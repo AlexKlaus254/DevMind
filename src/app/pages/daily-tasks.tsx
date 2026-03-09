@@ -99,6 +99,17 @@ export function DailyTasksPage() {
   }, [currentDate, fetchTasksForDate]);
 
   useEffect(() => {
+    if (!journalPrompt.show || !journalPrompt.projectId) return;
+    const key = `journal_prompted_${currentDate}_${journalPrompt.projectId}`;
+    const alreadyDismissed =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem(key) === "true";
+    if (alreadyDismissed) {
+      setJournalPrompt({ show: false });
+    }
+  }, [currentDate, journalPrompt.projectId, journalPrompt.show]);
+
+  useEffect(() => {
     // clear existing
     timeoutsRef.current.forEach((id) => cancelTaskNotification(id));
     timeoutsRef.current = [];

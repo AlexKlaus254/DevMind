@@ -223,7 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             full_name: args.name,
             role: args.role,
             org_name: args.orgName,
-            org_id: args.orgCode,
+            org_invite_code: args.orgCode,
           },
         },
       });
@@ -253,24 +253,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               name,
               role,
               org_id: org.id,
+              joined_org_at: new Date().toISOString(),
             },
             { onConflict: "id" }
           );
           }
         } else if (role === "member" && args.orgCode?.trim()) {
-          await supabase.from("profiles").upsert({
-            id: uid,
-            name,
-            role,
-            org_id: args.orgCode.trim(),
-          },
-          { onConflict: "id" }
-        );
+          const code = args.orgCode.trim().toUpperCase();
+
+          const { data: invite, error: inviteErr } = await supabase
+            .from("org_invites")
+            .select("id,org_id,code,expires_at,is_active,used_by")
+            .eq("code", code)
+            .maybeSingle();
+
+          if (inviteErr || !invite?.org_id) {
+            throw new Error("Invalid invite code.");
+          }
+          const expired =
+            invite.expires_at != null &&
+            new Date(invite.expires_at).getTime() <= Date.now();
+          if (!invite.is_active || expired || invite.used_by) {
+            throw new Error("Invite code is no longer active.");
+          }
+
+          await supabase
+            .from("org_invites")
+            .update({
+              used_by: uid,
+              used_at: new Date().toISOString(),
+            })
+            .eq("id", invite.id);
+
+          await supabase.from("profiles").upsert(
+            {
+              id: uid,
+              name,
+              role,
+              org_id: invite.org_id,
+              joined_org_at: new Date().toISOString(),
+            },
+            { onConflict: "id" },
+          );
         } else {
           await supabase.from("profiles").upsert({
             id: uid,
             name,
             role: "solo",
+            joined_org_at: null,
           },
           { onConflict: "id" }
         );

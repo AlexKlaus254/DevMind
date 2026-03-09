@@ -7,6 +7,7 @@ import { Sparkline } from "../components/devmind/sparkline";
 import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
 import { useProjects } from "../../hooks/useProjects";
+import { useNotificationSettings } from "../../hooks/useNotificationSettings";
 import { useAllJournalEntries } from "../../hooks/useJournal";
 import { getLastEntryGap } from "../../lib/silenceUtils";
 import { computeRiskScore } from "../../lib/riskScore";
@@ -52,6 +53,7 @@ export function ProjectList() {
   const [filter, setFilter] = useState<"all" | ProjectStatus>("all");
   const { projects, loading, error, fetchProjects, updateProjectStatus } =
     useProjects();
+  const { settings: notificationSettings } = useNotificationSettings();
   const { entriesByProject } = useAllJournalEntries();
   const navigate = useNavigate();
 
@@ -92,11 +94,15 @@ export function ProjectList() {
     const { projectId, status } = statusDialog;
     const ok = await updateProjectStatus(projectId, status);
     if (ok) {
-      const key = `devmind:pending-postmortem:${projectId}`;
-      localStorage.setItem(key, "true");
-      navigate(`/app/projects/${projectId}/post-mortem`, {
-        state: { targetStatus: status },
-      });
+      const shouldPromptPostMortem =
+        notificationSettings?.end_of_project_prompt !== false;
+      if (shouldPromptPostMortem) {
+        const key = `devmind:pending-postmortem:${projectId}`;
+        localStorage.setItem(key, "true");
+        navigate(`/app/projects/${projectId}/post-mortem`, {
+          state: { targetStatus: status },
+        });
+      }
     }
     setStatusDialog(null);
   };

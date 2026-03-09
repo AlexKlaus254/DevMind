@@ -1,3 +1,4 @@
+import * as React from "react";
 import {
   Users,
   AlertCircle,
@@ -32,6 +33,8 @@ import {
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { Slider } from "../components/ui/slider";
+import { Progress } from "../components/ui/progress";
 import { RoleGuard } from "../components/RoleGuard";
 
 export function TeamView() {
@@ -204,8 +207,8 @@ export function TeamView() {
             <div className="max-w-7xl mx-auto flex items-center gap-2 text-sm text-muted-foreground">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>
-                All metrics are anonymised. No individual journal entries,
-                reflections, or personal data are visible.
+                All metrics are anonymised. No individual entries, reflections, or
+                names are visible to managers.
               </span>
             </div>
           </div>
@@ -308,6 +311,7 @@ export function TeamView() {
 function OverviewTab({
   orgDetails,
   aggregates,
+  orgSettings,
 }: {
   orgDetails: ReturnType<typeof useTeam>["orgDetails"];
   aggregates: ReturnType<typeof useTeam>["aggregates"];
@@ -361,13 +365,13 @@ function OverviewTab({
           }
           icon={BarChart3}
           className={
-            completionConcern ? "border-destructive/50 text-destructive" : undefined
+            completionConcern ? "border-destructive/30 text-destructive/80" : undefined
           }
         />
         <StatCard
           title="Avg energy (30 days)"
           value={avgEnergy.toFixed(1)}
-          className={energyConcern ? "border-destructive/50 text-destructive" : undefined}
+          className={energyConcern ? "border-destructive/30 text-destructive/80" : undefined}
         />
         <StatCard
           title="Avg confidence (30 days)"
@@ -379,7 +383,7 @@ function OverviewTab({
           subtitle={
             totalMembers > 0 ? `${silentRatio.toFixed(1)}% of team` : undefined
           }
-          className={silentConcern ? "border-destructive/50 text-destructive" : undefined}
+          className={silentConcern ? "border-destructive/30 text-destructive/80" : undefined}
         />
         <StatCard
           title="Task completion (7 days)"
@@ -389,6 +393,24 @@ function OverviewTab({
               : `${taskCompletionRate.toFixed(1)}%`
           }
         />
+      </div>
+
+      <div className="bg-card border border-border rounded-lg p-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Task completion (7 days)</h3>
+          <span className="text-sm font-mono text-muted-foreground">
+            {aggregates.taskStats.total_tasks === 0
+              ? "—"
+              : `${taskCompletionRate.toFixed(1)}%`}
+          </span>
+        </div>
+        <Progress
+          value={aggregates.taskStats.total_tasks === 0 ? 0 : taskCompletionRate}
+          className="h-2"
+        />
+        <p className="text-xs text-muted-foreground">
+          {aggregates.taskStats.completed_tasks} of {aggregates.taskStats.total_tasks} tasks completed.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -486,10 +508,8 @@ function OverviewTab({
         <div className="bg-card border border-amber-500/40 rounded-lg p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5" />
           <p className="text-sm text-amber-100">
-            {silentMembers} member
-            {silentMembers !== 1 ? "s" : ""} have not logged an entry in{" "}
-            {(orgSettings?.silence_alert_days ?? 7) ?? 7} or more days. Consider
-            checking in with your team.
+            [{silentMembers}] member(s) have not logged in{" "}
+            {(orgSettings?.silence_alert_days ?? 7) ?? 7} or more days.
           </p>
         </div>
       )}
@@ -546,7 +566,7 @@ function MembersTab({
     <div className="space-y-4">
       {members.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No team members yet. Generate an invite code to add members.
+          No members yet. Generate an invite code.
         </p>
       ) : (
         <div className="bg-card border border-border rounded-lg">
@@ -697,9 +717,8 @@ function InvitesTab({
         )}
 
         <p className="text-xs text-muted-foreground">
-          Team members enter this code during signup when selecting{" "}
-          {"Team Member"} role. They will be automatically added to your
-          organisation.
+          Members select Team Member during signup and enter this code. They are
+          added automatically.
         </p>
       </section>
 
@@ -947,20 +966,23 @@ function SettingsTab({
             <p className="text-sm text-muted-foreground">
               Alert when a member has been silent for a number of days.
             </p>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">
+                  {settingsDraft.silenceAlertDays} day
+                  {settingsDraft.silenceAlertDays === 1 ? "" : "s"}
+                </span>
+                <span className="text-xs text-muted-foreground">1–14 days</span>
+              </div>
+              <Slider
+                value={[settingsDraft.silenceAlertDays]}
                 min={1}
-                max={30}
-                value={settingsDraft.silenceAlertDays}
-                onChange={(e) =>
-                  setDraft({
-                    silenceAlertDays: Math.max(1, Number(e.target.value) || 1),
-                  })
+                max={14}
+                step={1}
+                onValueChange={(v) =>
+                  setDraft({ silenceAlertDays: Math.max(1, v?.[0] ?? 7) })
                 }
-                className="w-20 bg-background"
               />
-              <span className="text-sm">days</span>
             </div>
             <p className="text-xs text-muted-foreground">
               This controls when someone is counted as a silent member in the
@@ -983,7 +1005,7 @@ function SettingsTab({
         disabled={saving}
         className="w-full bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium mt-2"
       >
-        {saving ? "Saving..." : "Save settings"}
+        {saving ? "Saving..." : "Save organisation settings"}
       </Button>
     </div>
   );

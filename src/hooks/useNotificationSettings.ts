@@ -14,6 +14,10 @@ const DEFAULT_SETTINGS = {
   silence_threshold_hours: 120,
   end_of_project_prompt: true,
   weekly_digest: true,
+  plan_reminder_enabled: true,
+  plan_reminder_style: "morning",
+  plan_reminder_time: "08:00",
+  plan_reminder_custom_time: null as string | null,
 };
 
 export type NotificationSettingsPayload = {
@@ -31,6 +35,10 @@ export type NotificationSettingsPayload = {
   scheduled_days?: string[] | null;
   scheduled_time?: string | null;
   scheduled_timezone?: string | null;
+  plan_reminder_enabled?: boolean;
+  plan_reminder_style?: string | null;
+  plan_reminder_time?: string | null;
+  plan_reminder_custom_time?: string | null;
 };
 
 export function useNotificationSettings() {
@@ -41,11 +49,11 @@ export function useNotificationSettings() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const fetchSettings = React.useCallback(async () => {
+  const fetchSettings = React.useCallback(async (): Promise<NotificationSettingsRow | null> => {
     if (!user?.id) {
       setSettings(null);
       setLoading(false);
-      return;
+      return null;
     }
     setLoading(true);
     setError(null);
@@ -58,12 +66,12 @@ export function useNotificationSettings() {
       if (err) {
         if (isSessionExpiredError(err)) {
           signOut({ sessionExpired: true });
-          return;
+          return null;
         }
         setError(parseSupabaseError(err));
         setSettings(null);
         setLoading(false);
-        return;
+        return null;
       }
       if (data) {
         const row = data as NotificationSettingsRow;
@@ -73,7 +81,17 @@ export function useNotificationSettings() {
           row.silence_threshold_hours =
             days != null ? days * 24 : DEFAULT_SETTINGS.silence_threshold_hours;
         }
+        if (row.plan_reminder_enabled == null) {
+          row.plan_reminder_enabled = DEFAULT_SETTINGS.plan_reminder_enabled;
+        }
+        if (row.plan_reminder_style == null) {
+          row.plan_reminder_style = DEFAULT_SETTINGS.plan_reminder_style;
+        }
+        if (row.plan_reminder_time == null) {
+          row.plan_reminder_time = DEFAULT_SETTINGS.plan_reminder_time;
+        }
         setSettings(row);
+        return row;
       } else {
         const { data: inserted, error: insertErr } = await supabase
           .from("notification_settings")
@@ -87,17 +105,21 @@ export function useNotificationSettings() {
         if (insertErr) {
           if (isSessionExpiredError(insertErr)) {
             signOut({ sessionExpired: true });
-            return;
+            return null;
           }
           setError(parseSupabaseError(insertErr));
           setSettings(null);
+          return null;
         } else {
-          setSettings(inserted as NotificationSettingsRow);
+          const row = inserted as NotificationSettingsRow;
+          setSettings(row);
+          return row;
         }
       }
     } catch (e) {
       setError(parseSupabaseError(e as Parameters<typeof parseSupabaseError>[0]));
       setSettings(null);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -155,6 +177,22 @@ export function useNotificationSettings() {
           data.scheduled_time ?? settings?.scheduled_time ?? null,
         scheduled_timezone:
           data.scheduled_timezone ?? settings?.scheduled_timezone ?? null,
+        plan_reminder_enabled:
+          data.plan_reminder_enabled ??
+          settings?.plan_reminder_enabled ??
+          DEFAULT_SETTINGS.plan_reminder_enabled,
+        plan_reminder_style:
+          data.plan_reminder_style ??
+          settings?.plan_reminder_style ??
+          DEFAULT_SETTINGS.plan_reminder_style,
+        plan_reminder_time:
+          data.plan_reminder_time ??
+          settings?.plan_reminder_time ??
+          DEFAULT_SETTINGS.plan_reminder_time,
+        plan_reminder_custom_time:
+          data.plan_reminder_custom_time ??
+          settings?.plan_reminder_custom_time ??
+          DEFAULT_SETTINGS.plan_reminder_custom_time,
       };
       const { data: updated, error: err } = await supabase
         .from("notification_settings")

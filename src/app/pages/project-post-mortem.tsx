@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams, useLocation } from "react-router";
-import { ArrowLeft, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/label";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group";
@@ -135,10 +135,9 @@ export function ProjectPostMortem() {
                 navigate("/app/projects");
               }
             }}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-4"
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back to project</span>
+            ← Back to project
           </button>
           <h1 className="text-2xl font-semibold">Project Post-Mortem</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -150,7 +149,7 @@ export function ProjectPostMortem() {
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
         {success && (
           <div className="text-sm rounded-md border border-success/30 bg-success/10 text-success px-4 py-3">
-            Post-mortem saved. Returning to project.
+            Post-mortem saved.
           </div>
         )}
 
