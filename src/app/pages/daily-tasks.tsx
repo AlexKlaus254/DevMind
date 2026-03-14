@@ -59,6 +59,7 @@ export function DailyTasksPage() {
     loading,
     error,
     fetchTasksForDate,
+    generateRecurringTasksForDate,
     createTask,
     updateTaskStatus,
     updateActualTime,
@@ -95,8 +96,20 @@ export function DailyTasksPage() {
   const canGoForward = currentDate < maxFutureStr;
 
   useEffect(() => {
-    fetchTasksForDate(currentDate);
-  }, [currentDate, fetchTasksForDate]);
+    let cancelled = false;
+    const load = async () => {
+      if (currentDate === todayStr) {
+        await generateRecurringTasksForDate(currentDate);
+      }
+      if (!cancelled) {
+        await fetchTasksForDate(currentDate);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentDate, fetchTasksForDate, generateRecurringTasksForDate, todayStr]);
 
   useEffect(() => {
     if (!journalPrompt.show || !journalPrompt.projectId) return;

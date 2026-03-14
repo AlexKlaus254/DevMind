@@ -3,9 +3,17 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { parseSupabaseError } from "../lib/errorHandler";
 import type { Database } from "../types/database";
+import {
+  generateDailyTasksFromRecurring,
+  type DailyTaskMinimal,
+  type RecurringTaskRow as RecurringTaskTemplateRow,
+} from "../lib/recurringTaskUtils";
 
 export type DailyTaskRow =
   Database["public"]["Tables"]["daily_tasks"]["Row"];
+
+export type RecurringTaskRow =
+  Database["public"]["Tables"]["recurring_tasks"]["Row"];
 
 export type DailyTaskStatus =
   | "planned"
@@ -30,6 +38,9 @@ export function useDailyTasks() {
   const [tasks, setTasks] = React.useState<DailyTaskRow[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [recurringTasks, setRecurringTasks] = React.useState<RecurringTaskRow[]>([]);
+  const [recurringLoading, setRecurringLoading] = React.useState(false);
+  const [recurringError, setRecurringError] = React.useState<string | null>(null);
 
   const fetchTasksForDate = React.useCallback(
     async (date: string) => {
@@ -60,6 +71,29 @@ export function useDailyTasks() {
     },
     [user?.id],
   );
+
+  const fetchRecurringTasks = React.useCallback(async () => {
+    if (!user?.id) {
+      setRecurringTasks([]);
+      setRecurringLoading(false);
+      return;
+    }
+    setRecurringLoading(true);
+    setRecurringError(null);
+    const { data, error: err } = await supabase
+      .from("recurring_tasks")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true });
+    if (err) {
+      setRecurringError(parseSupabaseError(err));
+      setRecurringTasks([]);
+      setRecurringLoading(false);
+      return;
+    }
+    setRecurringTasks((data ?? []) as RecurringTaskRow[]);
+    setRecurringLoading(false);
+  }, [user?.id]);
 
   const fetchTasksForProject = React.useCallback(
     async (projectId: string) => {
@@ -206,6 +240,90 @@ export function useDailyTasks() {
     [],
   );
 
+  /**
+   * Generates missing daily_tasks for a given date from the user's recurring
+   * task templates. This function is safe to call multiple times for the same
+   * date; it only inserts rows that do not already exist.
+   */
+  const generateRecurringTasksForDate = React.useCallback(
+    async (date: string): Promise<void> => {
+      if (!user?.id) return;
+
+      // Always read current templates from the database so changes are reflected.
+      const { data: tmplData, error: tmplErr } = await supabase
+        .from("recurring_tasks")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", true);
+      if (tmplErr) {
+        setRecurringError(parseSupabaseError(tmplErr));
+        return;
+      }
+      const templates = (tmplData ?? []) as RecurringTaskTemplateRow[];
+      setRecurringTasks(templates);
+
+      if (templates.length === 0) return;
+
+      const { data: existingData, error: existingErr } = await supabase
+        .from("daily_tasks")
+        .select("id,recurring_task_id,planned_date")
+        .eq("user_id", user.id)
+        .eq("planned_date", date);
+      if (existingErr) {
+        setError(parseSupabaseError(existingErr));
+        return;
+      }
+
+      const existing = (existingData ?? []) as DailyTaskMinimal[];
+      const toCreate = generateDailyTasksFromRecurring({
+        recurringTasks: templates,
+        date,
+        existingDailyTasks: existing,
+      });
+
+      if (toCreate.length === 0) return;
+
+      const insertPayload = toCreate.map((t) => ({
+        user_id: user.id,
+        project_id: t.project_id,
+        title: t.title,
+        description: t.description,
+        planned_date: date,
+        planned_start_time: t.planned_start_time,
+        planned_duration_minutes: t.planned_duration_minutes,
+        notify_at_start: t.notify_at_start,
+        notify_before_minutes: t.notify_before_minutes,
+        status: "planned",
+        is_recurring: true,
+        recurring_task_id: t.recurring_task_id,
+      }));
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from("daily_tasks")
+        .insert(insertPayload)
+        .select();
+      if (insertErr) {
+        setError(parseSupabaseError(insertErr));
+        return;
+      }
+
+      const insertedRows = (inserted ?? []) as DailyTaskRow[];
+      setTasks((prev) => {
+        // If we're already looking at this date, merge; otherwise leave as is.
+        if (prev.length === 0 || prev[0].planned_date !== date) {
+          return prev;
+        }
+        const merged = [...prev, ...insertedRows];
+        return merged.sort((a, b) =>
+          (a.planned_start_time ?? "") <= (b.planned_start_time ?? "")
+            ? -1
+            : 1,
+        );
+      });
+    },
+    [user?.id],
+  );
+
   return {
     tasks,
     loading,
@@ -215,6 +333,11 @@ export function useDailyTasks() {
     createTask,
     updateTaskStatus,
     updateActualTime,
+    recurringTasks,
+    recurringLoading,
+    recurringError,
+    fetchRecurringTasks,
+    generateRecurringTasksForDate,
   };
 }
 
