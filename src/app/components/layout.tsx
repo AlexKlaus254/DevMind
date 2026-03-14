@@ -10,15 +10,19 @@ import {
   Settings as SettingsIcon,
   Users,
   CheckSquare,
+  Sparkles,
 } from "lucide-react";
 import { Avatar } from "./ui/avatar";
 import { useAuth } from "../../contexts/AuthContext";
+import { useNotificationSettings } from "../../hooks/useNotificationSettings";
+import { useDailyTasks } from "../../hooks/useDailyTasks";
 
 const baseNavItems = [
   { path: "/app", icon: LayoutDashboard, label: "Dashboard" },
   { path: "/app/projects", icon: FolderKanban, label: "Projects" },
   { path: "/app/journal", icon: BookOpen, label: "Journal" },
   { path: "/app/tasks", icon: CheckSquare, label: "Daily Tasks" },
+  { path: "/app/habits", icon: Sparkles, label: "Habits" },
   { path: "/app/insights", icon: Brain, label: "Insights" },
   { path: "/app/digest", icon: FileText, label: "Digest" },
   { path: "/app/settings", icon: SettingsIcon, label: "Settings" },
@@ -28,12 +32,59 @@ export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, role, user, signOut } = useAuth();
+  const { fetchSettings } = useNotificationSettings();
+  const { fetchPlanRecord } = useDailyTasks();
 
   React.useEffect(() => {
     if (profile && profile.onboarding_complete !== true) {
       navigate("/onboarding", { replace: true });
     }
   }, [profile, navigate]);
+
+  React.useEffect(() => {
+    // Daily plan reminder scheduling
+    const schedule = async () => {
+      const settings = await fetchSettings();
+      if (!settings?.plan_reminder_enabled) return;
+
+      const todayStr = new Date().toISOString().split("T")[0]!;
+      const now = new Date();
+      const rawTime =
+        settings.plan_reminder_time ??
+        settings.plan_reminder_custom_time ??
+        "08:00";
+      const [hStr, mStr] = rawTime.split(":");
+      const h = Number(hStr ?? "0");
+      const m = Number(mStr ?? "0");
+      if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+
+      const reminderTime = new Date();
+      reminderTime.setHours(h, m, 0, 0);
+      const msUntil = reminderTime.getTime() - now.getTime();
+      const todayKey = `plan_notified_${todayStr}`;
+
+      if (msUntil <= 0) return;
+      if (typeof window === "undefined") return;
+      if (window.localStorage.getItem(todayKey) === "true") return;
+
+      window.setTimeout(async () => {
+        const record = await fetchPlanRecord(todayStr);
+        if (!record || !record.plan_filled) {
+          if (typeof window !== "undefined" && "Notification" in window) {
+            if (Notification.permission === "granted") {
+              new Notification("DevMind", {
+                body: "No plan for today. Add tasks.",
+                icon: "/favicon.svg",
+              });
+            }
+          }
+          window.localStorage.setItem(todayKey, "true");
+        }
+      }, msUntil);
+    };
+
+    schedule();
+  }, [fetchPlanRecord, fetchSettings]);
 
   if (profile && profile.onboarding_complete !== true) {
     return null;

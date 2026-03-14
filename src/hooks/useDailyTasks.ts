@@ -15,6 +15,12 @@ export type DailyTaskRow =
 export type RecurringTaskRow =
   Database["public"]["Tables"]["recurring_tasks"]["Row"];
 
+export type BreakDayRow =
+  Database["public"]["Tables"]["break_days"]["Row"];
+
+export type DailyPlanRecordRow =
+  Database["public"]["Tables"]["daily_plan_records"]["Row"];
+
 export type DailyTaskStatus =
   | "planned"
   | "in_progress"
@@ -33,6 +39,32 @@ export type CreateTaskInput = {
   notify_before_minutes?: number | null;
 };
 
+export type CreateRecurringTaskInput = {
+  title: string;
+  description?: string | null;
+  project_id?: string | null;
+  frequency: "daily" | "weekdays" | "weekends" | "custom";
+  custom_days?: string[] | null;
+  planned_start_time?: string | null;
+  planned_duration_minutes?: number | null;
+  notify_at_start?: boolean;
+  notify_before_minutes?: number | null;
+  is_active?: boolean;
+};
+
+export type UpdateRecurringTaskInput = {
+  title?: string;
+  description?: string | null;
+  project_id?: string | null;
+  frequency?: "daily" | "weekdays" | "weekends" | "custom";
+  custom_days?: string[] | null;
+  planned_start_time?: string | null;
+  planned_duration_minutes?: number | null;
+  notify_at_start?: boolean;
+  notify_before_minutes?: number | null;
+  is_active?: boolean;
+};
+
 export function useDailyTasks() {
   const { user } = useAuth();
   const [tasks, setTasks] = React.useState<DailyTaskRow[]>([]);
@@ -41,6 +73,14 @@ export function useDailyTasks() {
   const [recurringTasks, setRecurringTasks] = React.useState<RecurringTaskRow[]>([]);
   const [recurringLoading, setRecurringLoading] = React.useState(false);
   const [recurringError, setRecurringError] = React.useState<string | null>(null);
+  const [breakDay, setBreakDayState] = React.useState<BreakDayRow | null>(null);
+  const [breakDayLoading, setBreakDayLoading] = React.useState(false);
+  const [breakDayError, setBreakDayError] = React.useState<string | null>(null);
+  const [planRecord, setPlanRecordState] =
+    React.useState<DailyPlanRecordRow | null>(null);
+  const [planRecordLoading, setPlanRecordLoading] = React.useState(false);
+  const [planRecordError, setPlanRecordError] =
+    React.useState<string | null>(null);
 
   const fetchTasksForDate = React.useCallback(
     async (date: string) => {
@@ -94,6 +134,89 @@ export function useDailyTasks() {
     setRecurringTasks((data ?? []) as RecurringTaskRow[]);
     setRecurringLoading(false);
   }, [user?.id]);
+
+  const createRecurringTask = React.useCallback(
+    async (input: CreateRecurringTaskInput): Promise<RecurringTaskRow | null> => {
+      if (!user?.id) return null;
+      if (!input.title.trim()) {
+        setRecurringError("Recurring task title is required.");
+        return null;
+      }
+      setRecurringError(null);
+      const { data, error: err } = await supabase
+        .from("recurring_tasks")
+        .insert({
+          user_id: user.id,
+          project_id: input.project_id ?? null,
+          title: input.title.trim(),
+          description: input.description ?? null,
+          frequency: input.frequency,
+          custom_days: input.frequency === "custom" ? input.custom_days ?? [] : null,
+          planned_start_time: input.planned_start_time ?? null,
+          planned_duration_minutes: input.planned_duration_minutes ?? null,
+          notify_at_start: input.notify_at_start ?? false,
+          notify_before_minutes: input.notify_before_minutes ?? 15,
+          is_active: input.is_active ?? true,
+        })
+        .select()
+        .single();
+      if (err) {
+        setRecurringError(parseSupabaseError(err));
+        return null;
+      }
+      const row = data as RecurringTaskRow;
+      setRecurringTasks((prev) => [...prev, row]);
+      return row;
+    },
+    [user?.id],
+  );
+
+  const updateRecurringTask = React.useCallback(
+    async (
+      id: string,
+      updates: UpdateRecurringTaskInput,
+    ): Promise<boolean> => {
+      if (!id) return false;
+      setRecurringError(null);
+      const payload: Partial<RecurringTaskRow> = {
+        ...updates,
+      };
+      if (updates.frequency && updates.frequency !== "custom") {
+        payload.custom_days = null;
+      }
+      const { error: err } = await supabase
+        .from("recurring_tasks")
+        .update(payload)
+        .eq("id", id);
+      if (err) {
+        setRecurringError(parseSupabaseError(err));
+        return false;
+      }
+      setRecurringTasks((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, ...payload } : t)),
+      );
+      return true;
+    },
+    [],
+  );
+
+  const deleteRecurringTask = React.useCallback(
+    async (id: string): Promise<boolean> => {
+      if (!id) return false;
+      setRecurringError(null);
+      const { error: err } = await supabase
+        .from("recurring_tasks")
+        .delete()
+        .eq("id", id);
+      if (err) {
+        setRecurringError(parseSupabaseError(err));
+        return false;
+      }
+      setRecurringTasks((prev) => prev.filter((t) => t.id !== id));
+      return true;
+    },
+    [],
+  );
 
   const fetchTasksForProject = React.useCallback(
     async (projectId: string) => {
@@ -324,6 +447,209 @@ export function useDailyTasks() {
     [user?.id],
   );
 
+  const fetchBreakDay = React.useCallback(
+    async (date: string): Promise<BreakDayRow | null> => {
+      if (!user?.id) {
+        setBreakDayState(null);
+        setBreakDayLoading(false);
+        return null;
+      }
+      setBreakDayLoading(true);
+      setBreakDayError(null);
+      const { data, error: err } = await supabase
+        .from("break_days")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("date", date)
+        .maybeSingle();
+      if (err) {
+        setBreakDayError(parseSupabaseError(err));
+        setBreakDayState(null);
+        setBreakDayLoading(false);
+        return null;
+      }
+      const row = (data as BreakDayRow | null) ?? null;
+      setBreakDayState(row);
+      setBreakDayLoading(false);
+      return row;
+    },
+    [user?.id],
+  );
+
+  const fetchPlanRecord = React.useCallback(
+    async (date: string): Promise<DailyPlanRecordRow | null> => {
+      if (!user?.id) {
+        setPlanRecordState(null);
+        setPlanRecordLoading(false);
+        return null;
+      }
+      setPlanRecordLoading(true);
+      setPlanRecordError(null);
+      const { data, error: err } = await supabase
+        .from("daily_plan_records")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("date", date)
+        .maybeSingle();
+      if (err) {
+        setPlanRecordError(parseSupabaseError(err));
+        setPlanRecordState(null);
+        setPlanRecordLoading(false);
+        return null;
+      }
+      const row = (data as DailyPlanRecordRow | null) ?? null;
+      setPlanRecordState(row);
+      setPlanRecordLoading(false);
+      return row;
+    },
+    [user?.id],
+  );
+
+  const upsertPlanRecord = React.useCallback(
+    async (
+      input: Omit<DailyPlanRecordRow, "id" | "created_at" | "user_id"> & {
+        user_id?: string | null;
+      },
+    ): Promise<DailyPlanRecordRow | null> => {
+      if (!user?.id) return null;
+      setPlanRecordError(null);
+      const payload = {
+        user_id: user.id,
+        date: input.date,
+        planned_at: input.planned_at ?? null,
+        task_count: input.task_count ?? null,
+        is_break_day: input.is_break_day ?? null,
+        plan_filled: input.plan_filled ?? null,
+      };
+      const { data, error: err } = await supabase
+        .from("daily_plan_records")
+        .upsert(payload, {
+          onConflict: "user_id,date",
+        })
+        .select()
+        .single();
+      if (err) {
+        setPlanRecordError(parseSupabaseError(err));
+        return null;
+      }
+      const row = data as DailyPlanRecordRow;
+      setPlanRecordState(row);
+      return row;
+    },
+    [user?.id],
+  );
+
+  const setBreakDay = React.useCallback(
+    async (
+      date: string,
+      breakType: string,
+      note?: string | null,
+    ): Promise<boolean> => {
+      if (!user?.id) return false;
+      setBreakDayError(null);
+      setPlanRecordError(null);
+      const { error: breakErr, data: breakData } = await supabase
+        .from("break_days")
+        .upsert(
+          {
+            user_id: user.id,
+            date,
+            break_type: breakType,
+            note: note ?? null,
+          },
+          { onConflict: "user_id,date" },
+        )
+        .select()
+        .single();
+      if (breakErr) {
+        setBreakDayError(parseSupabaseError(breakErr));
+        return false;
+      }
+      setBreakDayState(breakData as BreakDayRow);
+      await upsertPlanRecord({
+        date,
+        planned_at: null,
+        task_count: 0,
+        is_break_day: true,
+        plan_filled: true,
+      });
+      return true;
+    },
+    [upsertPlanRecord, user?.id],
+  );
+
+  const removeBreakDay = React.useCallback(
+    async (date: string): Promise<boolean> => {
+      if (!user?.id) return false;
+      setBreakDayError(null);
+      const { error: err } = await supabase
+        .from("break_days")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("date", date);
+      if (err) {
+        setBreakDayError(parseSupabaseError(err));
+        return false;
+      }
+      setBreakDayState(null);
+      await upsertPlanRecord({
+        date,
+        planned_at: null,
+        task_count: 0,
+        is_break_day: false,
+        plan_filled: false,
+      });
+      return true;
+    },
+    [upsertPlanRecord, user?.id],
+  );
+
+  const checkAndRecordYesterday = React.useCallback(async () => {
+    if (!user?.id) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+    const [{ data: planData, error: planErr }, { data: breakData, error: breakErr }] =
+      await Promise.all([
+        supabase
+          .from("daily_plan_records")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("date", yesterdayStr)
+          .maybeSingle(),
+        supabase
+          .from("break_days")
+          .select("*")
+          .eq("user_id", user.id)
+          .eq("date", yesterdayStr)
+          .maybeSingle(),
+      ]);
+
+    if (planErr && !planErr) {
+      // no-op: defensive, but we do not want to throw here
+    }
+    if (breakErr && !breakErr) {
+      // same as above
+    }
+
+    const planExists = !!planData;
+    const isBreak =
+      !!breakData &&
+      (breakData as BreakDayRow | null)?.date === yesterdayStr;
+
+    if (!planExists && !isBreak) {
+      await upsertPlanRecord({
+        date: yesterdayStr,
+        planned_at: null,
+        task_count: 0,
+        is_break_day: false,
+        plan_filled: false,
+      });
+    }
+  }, [upsertPlanRecord, user?.id]);
   return {
     tasks,
     loading,
@@ -337,7 +663,22 @@ export function useDailyTasks() {
     recurringLoading,
     recurringError,
     fetchRecurringTasks,
+    createRecurringTask,
+    updateRecurringTask,
+    deleteRecurringTask,
     generateRecurringTasksForDate,
+    breakDay,
+    breakDayLoading,
+    breakDayError,
+    fetchBreakDay,
+    planRecord,
+    planRecordLoading,
+    planRecordError,
+    fetchPlanRecord,
+    upsertPlanRecord,
+    setBreakDay,
+    removeBreakDay,
+    checkAndRecordYesterday,
   };
 }
 
